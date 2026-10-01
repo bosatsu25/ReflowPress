@@ -1,6 +1,23 @@
+export interface NavigationItem {
+  readonly id?: string;
+  readonly label: string;
+  readonly href: string;
+  readonly children?: readonly NavigationItem[];
+}
+
 export interface PublicationMetadata {
   readonly title?: string;
   readonly language?: string;
+  readonly identifier?: string;
+  readonly creator?: string | readonly string[];
+  readonly publisher?: string;
+  readonly description?: string;
+  readonly rights?: string;
+  readonly modified?: string;
+  readonly renditionLayout?: "reflowable" | "pre-paginated";
+  readonly renditionOrientation?: "auto" | "portrait" | "landscape";
+  readonly renditionSpread?: "auto" | "none" | "landscape" | "both";
+  readonly direction?: "ltr" | "rtl" | "default";
 }
 
 export interface PublicationSection {
@@ -8,6 +25,7 @@ export interface PublicationSection {
   readonly href: string;
   readonly mediaType: string;
   readonly markup: string;
+  readonly linear?: boolean;
 }
 
 export interface PublicationResource {
@@ -18,9 +36,11 @@ export interface PublicationResource {
 
 /** Format-neutral content produced by a publication adapter. */
 export interface NormalizedPublication {
+  readonly version?: "2.0" | "3.0" | string;
   readonly metadata: PublicationMetadata;
   readonly readingOrder: readonly PublicationSection[];
   readonly resources: readonly PublicationResource[];
+  readonly navigation?: readonly NavigationItem[];
 }
 
 export interface PublicationSource {

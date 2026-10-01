@@ -1,4 +1,5 @@
 import type { PublicationAdapter, PublicationSource } from "@reflowpress/core";
+
 export {
   EpubInspectionError,
   inspectEpub,
@@ -10,11 +11,18 @@ export {
   type EpubSpineItem,
 } from "./inspect.js";
 
-export interface EpubSource extends PublicationSource {
-  readonly mediaType: "application/epub+zip";
-}
+export {
+  EpubLoader,
+  loadEpub,
+  EpubLoadingError,
+  DEFAULT_LOADER_LIMITS,
+  type EpubLoadingErrorCode,
+  type EpubLoaderLimits,
+  type EpubSource,
+} from "./loader.js";
 
-/** Contract for the future EPUB 2 and EPUB 3 publication adapter. */
-export interface EpubPublicationAdapter extends PublicationAdapter<EpubSource> {
+export { parseNavDocument, parseNcxDocument } from "./navigation.js";
+
+export interface EpubPublicationAdapter extends PublicationAdapter<PublicationSource> {
   readonly id: "epub";
 }
