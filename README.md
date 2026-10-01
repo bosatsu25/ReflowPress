@@ -1,98 +1,139 @@
 # ReflowPress
 
-## What is ReflowPress?
+> **A free, local-first workbench for reading, organizing, inspecting, repairing, searching, annotating, and exporting EPUB and PDF publications.**
 
-ReflowPress is a local-first project for preparing electronic books and
-documents for reliable PDF workflows. The repository has completed bootstrap
-stabilization and implements the **Phase 1 EPUB Inspector**. It reads an EPUB's
-ZIP container and OPF structure and returns structured inspection data. EPUB
-content normalization, PDF conversion, rendering, validation, and GUI features
-remain unimplemented.
+_EPUB/PDFを読む・整理する・検索する・注釈する・検査する・修復する・変換するための、無料・ローカルファースト電子書籍ワークベンチ。_
 
-## Why ReflowPress?
+ReflowPress bridges document reading, library organization, publication health inspection, safe repair, and high-fidelity document conversion into an integrated, offline-first personal electronic book environment.
 
-Electronic books can render differently across readers and may be difficult to
-use in document workflows. ReflowPress is designed around a repeatable
-conversion pipeline and a test feedback loop, so output quality and
-regressions can be checked. The project also demonstrates TypeScript,
-Playwright, automated testing, and QA design.
+---
 
-## Architecture
+## Current Status & Implementation Facts
 
-The solid inspection path is implemented. The separate conversion path remains
-planned; type-level contracts are labeled separately from implementations.
+> [!IMPORTANT]
+> **ReflowPress is in active foundation development.**
+> Do not mistake planned functionality for implemented features. The desktop reader GUI, PDF conversion, library management, and repair tools are **planned for future milestones**.
+
+### Current State (`main`)
+
+- **Milestone 0.1 (Foundation)**: **Complete**
+- **EPUB Inspector (`inspectEpub`)**: **Implemented** (Parses ZIP container, `container.xml`, and OPF package document; extracts metadata, manifest, and spine; enforces path safety and resource limits; backed by 22 passing unit tests).
+- **Publication Core Contracts**: **Type-level contracts defined** (`NormalizedPublication`, `PublicationAdapter`, `Renderer`, `PdfValidator`).
+- **Publication Core Implementation (`EpubLoader`)**: **Next (Milestone 0.2)**.
+- **Reader Engine & Viewer UI**: **Planned (Milestone 0.3)**.
+- **Library Catalog & Collections**: **Planned (Milestone 0.4)**.
+- **Reading Tools (Search, Notes, Annotations)**: **Planned (Milestone 0.5)**.
+- **Japanese Typography & Accessibility**: **Planned (Milestone 0.6)**.
+- **Export Workbench (EPUB to PDF/HTML/MD)**: **Planned (Milestone 0.7)**.
+- **Publication Repair & PDF Quality Gate**: **Planned (Milestone 0.8)**.
+
+---
+
+## Architecture v2
+
+ReflowPress shares one single **Publication Core** between document reading and document export, preventing duplicate parsing logic.
 
 ```mermaid
-flowchart LR
-    SOURCE[Source publication]
-    INSPECTOR[EPUB Inspector<br/>implemented]
-    INSPECTION[EpubInspection<br/>implemented result]
-    EPUB[EPUB adapter contract<br/>types only]
-    OTHER[Future adapters<br/>CBZ / FB2 / HTML / Markdown]
-    MODEL[NormalizedPublication<br/>type implemented]
-    RENDERER[Renderer contract<br/>type implemented]
-    VIV[Future: Vivliostyle integration<br/>not implemented]
-    PDF[PDF output contract<br/>generation not implemented]
-    VALIDATOR[PDF validator contract<br/>rules not implemented]
-    RESULT[Validated PDF<br/>planned]
+flowchart TD
+    SOURCE[EPUB / PDF File]
 
-    SOURCE --> INSPECTOR --> INSPECTION
-    SOURCE -. future conversion .-> EPUB
-    SOURCE -. future .-> OTHER
-    EPUB -. future adapter implementation .-> MODEL
-    OTHER -. future .-> MODEL
-    MODEL --> RENDERER
-    RENDERER -. future implementation .-> VIV
-    RENDERER --> PDF
-    PDF --> VALIDATOR
-    VALIDATOR --> RESULT
+    subgraph INSP_SUB[Inspection & Health Pipeline]
+        INSPECTOR[Inspector<br/>implemented for EPUB]
+        HEALTH[Health Report<br/>implemented for EPUB]
+    end
+
+    subgraph CORE_SUB[Publication Core]
+        LOADER[EpubLoader / PdfLoader<br/>planned]
+        PUB_MODEL[Publication Model<br/>planned]
+        NORMALIZED[NormalizedPublication<br/>contract exists; evolution planned]
+    end
+
+    subgraph CONSUMER_SUB[Application Features & Engines]
+        READER[Reader Engine<br/>planned]
+        ANNOTATION[Annotation Store<br/>planned]
+        LIBRARY[Library Catalog<br/>planned]
+        SEARCH[Search Index<br/>planned]
+        EXPORT[Export Engine<br/>PDF / HTML / Markdown<br/>planned]
+        VALIDATION[Validation Gate<br/>PDF Quality Gate<br/>planned]
+    end
+
+    SOURCE --> INSPECTOR --> HEALTH
+    SOURCE --> LOADER --> PUB_MODEL --> NORMALIZED
+
+    NORMALIZED --> READER
+    READER --> ANNOTATION
+    ANNOTATION --> LIBRARY
+    NORMALIZED --> SEARCH
+    NORMALIZED --> EXPORT
+    EXPORT --> VALIDATION
 ```
 
-See [the architecture and package dependency graphs](docs/architecture.md) and
-[all diagram notes](docs/diagrams/README.md).
+See the [Architecture v2 Document](docs/architecture.md) and [Diagram Notes](docs/diagrams/README.md) for full subsystem details.
 
-The package API can inspect a local EPUB archive:
+---
+
+## Using the EPUB Inspector (Implemented)
+
+The programmatic API in `@reflowpress/epub` can inspect any local EPUB archive today:
 
 ```ts
 import { inspectEpub } from "@reflowpress/epub";
 
 const inspection = await inspectEpub("./book.epub");
+
+console.log("Package Path:", inspection.packagePath);
+console.log("Title:", inspection.metadata.title);
+console.log("Manifest Items:", inspection.manifest.length);
+console.log("Spine Itemrefs:", inspection.spine.length);
 ```
 
-The result contains the OPF path, available Dublin Core metadata, manifest
-items, and spine order. Inspection does not extract files or produce a PDF.
+The inspector evaluates archive validity, verifies internal OPF references, checks that manifest resources exist in the archive, and enforces configurable safety caps (archive bytes, entry counts, XML document limits) without extracting files to disk.
 
-## Development Loop
+---
 
-This loop applies to incidents, bug fixes, features, test improvements, and
-quality improvements.
+## Product Principles
 
-```mermaid
-flowchart LR
-    A[Observe] --> B[Hypothesis]
-    B --> C[Reproduce]
-    C --> D[Root Cause]
-    D --> E[Design]
-    E --> F[Implement]
-    F --> G[Verify]
-    G --> H[Regression Test]
-    H --> I[Document]
-    I --> A
-```
+1. **Free and open source**: Licensed openly and community-auditable.
+2. **Local-first**: Books, catalogs, notes, and indexes stay on your local disk.
+3. **Account optional**: No mandatory sign-in, cloud accounts, or subscriptions.
+4. **Standards-first**: Compliant with EPUB 2/3, PDF (ISO 32000), HTML5, and CSS standards.
+5. **No DRM circumvention**: We respect legal boundaries; DRM files are safely detected, explained, and treated as unsupported.
+6. **Reader and converter share one Publication Core**: Unified data model eliminates duplicate parsers.
+7. **Never silently corrupt a publication**: Malformed input is surfaced transparently.
+8. **Inspect before repair**: Factual diagnostics always precede remediation.
+9. **Non-destructive edits by default**: Original books remain untouched; repairs and exports generate separate files.
+10. **Automated repairs must be explainable and reversible**: Every repair diff is previewable and undoable.
+11. **Quality is a product feature**: Built-in verification gates guarantee document fidelity.
+12. **AI is optional**: 100% usable in offline, air-gapped environments without AI.
+13. **Privacy by default**: Zero telemetry, zero analytics tracking, zero silent network calls.
+14. **Accessibility is a first-class requirement**: Keyboard navigation, ARIA semantics, and contrast ratios are core design requirements.
 
-Read the full procedure in [docs/development-loop.md](docs/development-loop.md).
+Read the complete [Product Vision](docs/product-vision.md) and [ADE Compatibility Matrix](docs/compatibility-matrix.md).
 
-## Quality Strategy
+---
 
-The project tests EPUB inspection with generated ZIP fixtures, including
-malformed input, missing references, unsafe paths, and configured size/count
-limits. PDF quality, visual regression, and golden master checks remain planned
-until a renderer exists. See [docs/test-strategy.md](docs/test-strategy.md) for
-the applied test design techniques and remaining coverage.
+## Roadmap v2
 
-## Development setup
+| Milestone                | Scope                                                                         | Status       |
+| ------------------------ | ----------------------------------------------------------------------------- | ------------ |
+| **0.1 Foundation**       | Monorepo, contracts, CI, and Phase 1 EPUB Inspector                           | **Complete** |
+| **0.2 Publication Core** | EPUB Loader, resources, reading order, navigation, normalization              | **Next**     |
+| **0.3 Reader MVP**       | Reflowable EPUB rendering, PDF viewing, TOC, reading position, themes         | Planned      |
+| **0.4 Library MVP**      | Local directory scan, covers, metadata catalog, collections, sorting          | Planned      |
+| **0.5 Reading Tools**    | In-book search, bookmarks, highlights, notes, portable annotation export      | Planned      |
+| **0.6 Japanese & A11y**  | Vertical Japanese (`vertical-rl`), ruby, kinsoku, keyboard nav, screen-reader | Planned      |
+| **0.7 Export Workbench** | EPUB to PDF (timestamp naming), HTML, Markdown, batch CLI                     | Planned      |
+| **0.8 Quality & Repair** | Diagnostic health suite, non-destructive safe repair, PDF Quality Gate        | Planned      |
+| **0.9 Interoperability** | OPDS catalog support, e-reader device transfer, local cloud sync              | Planned      |
+| **1.0 Stable Release**   | Native installers, crash recovery, performance optimization, API freeze       | Planned      |
 
-Install Node.js 22.13 or newer and pnpm 11. From the repository root:
+Read the full milestone descriptions in [docs/roadmap.md](docs/roadmap.md).
+
+---
+
+## Development Setup
+
+Requires Node.js >= 22.13.0 and pnpm >= 11.25.0:
 
 ```sh
 pnpm install
@@ -102,21 +143,9 @@ pnpm test
 pnpm build
 ```
 
-Playwright Test is configured for `tests/e2e`, but there is no application to
-launch yet. E2E tests are not required in CI until a real GUI exists.
+---
 
-## Roadmap
+## Architecture Decision Records
 
-| Phase | Scope                                             | Status      |
-| ----- | ------------------------------------------------- | ----------- |
-| 0     | Development foundation                            | Complete    |
-| 0.5   | Bootstrap stabilization and quality documentation | Complete    |
-| 1     | EPUB Inspector                                    | Implemented |
-| 2     | EPUB 3 to PDF CLI and output filename generation  | Planned     |
-| 3     | PDF Quality Gate                                  | Planned     |
-| 4     | Playwright and visual regression                  | Planned     |
-| 5     | Desktop GUI                                       | Planned     |
-| 6     | Additional publication formats                    | Planned     |
-
-PDF output filename requirements for Phase 2 are recorded in
-[docs/product-requirements.md](docs/product-requirements.md#pdf-output-naming-requirement-planned-for-phase-2).
+- [ADR 0001: Layered Publication Pipeline](docs/adr/0001-layered-publication-pipeline.md)
+- [ADR 0002: Product Reboot to Local-First Ebook Workbench](docs/adr/0002-product-reboot-workbench.md)
