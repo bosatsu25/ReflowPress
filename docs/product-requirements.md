@@ -46,17 +46,22 @@ To ensure absolute transparency between implemented features and planned milesto
 - `Renderer` & `VivliostyleRenderer` (renderer interface contracts)
 - `PdfDocument` & `PdfValidator` (PDF output and validation contracts)
 
+### Implemented in Milestone 0.3
+
+- EPUB reader interface & reflowable layout engine (`@reflowpress/reader`, `@reflowpress/desktop`)
+- Native PDF reader interface (`pdfjs-dist`)
+- Desktop application GUI (Electron 33 + React 19 + Vite)
+- Table of Contents navigation drawer & keyboard page turning
+- Reading position persistence (`reader-state.json`)
+
 ### Not Implemented (Planned in Future Milestones)
 
-- EPUB reader interface & layout engine (Milestone 0.3)
-- PDF reader interface (Milestone 0.3)
 - Library catalog & collection management (Milestone 0.4)
 - Full-text search engine (Milestone 0.5)
 - Bookmarks, highlights, and note annotations (Milestone 0.5)
 - Portable annotation export (JSON, Markdown, HTML) (Milestone 0.5)
 - EPUB to PDF conversion engine (Milestone 0.7)
 - PDF Quality Gate automated verification (Milestone 0.8)
-- Desktop application GUI (Electron/Tauri) (Milestone 1.0)
 - Headless CLI workflow (Milestone 0.7)
 
 ---
@@ -91,17 +96,17 @@ To ensure absolute transparency between implemented features and planned milesto
 - [x] Detect DRM/encryption and enforce configurable resource limits.
 - [x] Expand automated tests (36 unit tests passing).
 
-### Milestone 0.3: Reader MVP (Next Priority)
+### Milestone 0.3: Reader MVP (Complete)
 
-- [ ] Render reflowable EPUB chapters in an accessible DOM-based reading viewport.
-- [ ] Render fixed-layout PDF documents in the viewer.
-- [ ] Provide an interactive Table of Contents navigation drawer.
-- [ ] Implement page turning, scroll mode, and keyboard navigation (`ArrowRight`, `ArrowLeft`, `Space`, `PageUp`, `PageDown`).
-- [ ] Provide customizable font settings (family, size, line-height, margin width).
-- [ ] Support Light, Dark, and Sepia reading themes.
-- [ ] Persist the last read location across app restarts.
+- [x] Render reflowable EPUB chapters in an accessible DOM-based reading viewport.
+- [x] Render fixed-layout PDF documents in the viewer.
+- [x] Provide an interactive Table of Contents navigation drawer.
+- [x] Implement page turning, scroll mode, and keyboard navigation (`ArrowRight`, `ArrowLeft`, `Space`, `PageUp`, `PageDown`).
+- [x] Provide customizable font settings (family, size, line-height, margin width).
+- [x] Support Light, Dark, and Sepia reading themes.
+- [x] Persist the last read location across app restarts.
 
-### Milestone 0.4: Library MVP
+### Milestone 0.4: Library MVP (Next Priority)
 
 - [ ] Scan local directories for EPUB and PDF publications.
 - [ ] Extract and cache book covers and Dublin Core metadata.

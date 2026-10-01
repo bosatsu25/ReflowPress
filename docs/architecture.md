@@ -24,7 +24,7 @@ flowchart TD
     end
 
     subgraph CONSUMER_SUB[Application Features & Engines]
-        READER[Reader Engine<br/>planned for 0.3]
+        READER[Reader Engine<br/>implemented in 0.3]
         ANNOTATION[Annotation Store<br/>planned]
         LIBRARY[Library Catalog<br/>planned]
         SEARCH[Search Index<br/>planned]
@@ -206,25 +206,57 @@ _Note: These packages represent an architectural roadmap. They will be introduce
 
 ---
 
-## Desktop Architecture
+## Desktop Architecture (Milestone 0.3)
 
-The desktop application will provide a fluid, accessible GUI for the workbench. To preserve flexibility, ReflowPress maintains a strict separation between the desktop runtime shell and the core workbench logic:
+In Milestone 0.3, ReflowPress implemented its desktop reader runtime as defined in [ADR 0003: Desktop Reader Runtime](adr/0003-desktop-reader-runtime.md). The desktop application maintains strict architectural boundaries across three layers:
 
 ```mermaid
 flowchart TD
-    SHELL[Desktop Shell<br/>Electron / Tauri / Native Host]
-    ADAPTER[Application Adapter<br/>Window management, IPC, native menus, dialogs]
-    WORKBENCH[Shared Workbench Packages<br/>@reflowpress/*]
+    subgraph SHELL[Desktop Shell: apps/desktop]
+        MAIN[Electron Main Process<br/>Window lifecycle, safe IPC, atomic storage]
+        PRELOAD[Preload Script<br/>contextIsolation, allowlisted bridge]
+        RENDERER[React 19 + Vite Renderer<br/>Header, TOC Drawer, Footer, Settings]
+    end
 
-    SHELL --> ADAPTER
-    ADAPTER --> WORKBENCH
+    subgraph ADAPTER[Application Adapter]
+        BRIDGE[Desktop Bridge: reflowPressDesktop]
+        SANITIZER[XHTML Sanitizer & Blob Resource Manager]
+    end
+
+    subgraph WORKBENCH[Pure Shared Domain Packages]
+        READER_PKG[@reflowpress/reader<br/>State, Navigation, Settings, Location]
+        CORE_PKG[@reflowpress/core<br/>NormalizedPublication, Section, Resource]
+        EPUB_PKG[@reflowpress/epub<br/>loadEpub, inspectEpub]
+    end
+
+    MAIN --> PRELOAD
+    PRELOAD --> BRIDGE
+    BRIDGE --> RENDERER
+    RENDERER --> SANITIZER
+    RENDERER --> READER_PKG
+    MAIN --> EPUB_PKG
+    MAIN --> CORE_PKG
 ```
 
-### Decoupled Shell Design
+### Key Architectural Characteristics
 
-- **No Early Framework Lock-in**: The choice between Electron, Tauri, or alternative lightweight shells is explicitly deferred to a dedicated Architecture Decision Record (ADR) prior to Milestone 0.3.
-- **Application Adapter Interface**: The UI communicates with shared packages exclusively through a well-defined application adapter layer.
-- **Native OS Integration**: File dialogs, context menus, drag-and-drop, and system theme detection are abstracted behind capability interfaces.
+1. **Security & Sandbox Isolation**:
+   - `contextIsolation = true`, `nodeIntegration = false`, and `sandbox = true`.
+   - The React renderer process has zero access to Node `fs`, `child_process`, or internal system handles.
+   - All IPC communication is strictly typed and allowlisted via `contextBridge.exposeInMainWorld("reflowPressDesktop", ...)`.
+   - Unauthorized external navigation and popup window creation are unconditionally blocked.
+
+2. **UI-Independent Reader Domain (`@reflowpress/reader`)**:
+   - Encapsulates pure domain logic: reading positions, navigation clamping, section href lookups, reader settings, and status state machines.
+   - 100% free of Electron or React dependencies, ensuring complete portability for future CLI, web, or mobile runtimes.
+
+3. **Multi-Format Publication Viewing**:
+   - **Reflowable EPUB**: Rendered inside a sandboxed `<iframe>` (`sandbox="allow-same-origin"`, script execution blocked). XHTML is pre-sanitized by removing dangerous tags (`<script>`, `<object>`, `<embed>`), stripping inline event handlers (`onclick`, etc.), and neutralizing `javascript:` URLs. Publication assets (CSS, images, fonts) are served via mapped Blob URLs with disposal upon book unload.
+   - **Native PDF**: Rendered directly onto an HTML5 `<canvas>` using Mozilla `pdfjs-dist` with page navigation and zoom controls (50% to 300%). The reader UI theme surrounds the canvas without inverting PDF page pixels.
+
+4. **Atomic Reading Position Persistence**:
+   - `ReadingPositionStore` persists active reading positions (section href, progress percentage, PDF page, zoom) to a localized JSON file (`reader-state.json`).
+   - Uses write-to-temp-file and atomic rename semantics to prevent corruption during unexpected shutdowns. Restores position automatically upon reopening.
 
 ---
 

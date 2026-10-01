@@ -14,8 +14,8 @@ A key strategic principle of Roadmap v2 is:
 ```mermaid
 flowchart TD
     M01[0.1 Foundation<br/>COMPLETE] --> M02[0.2 Publication Core<br/>COMPLETE]
-    M02 --> M03[0.3 Reader MVP<br/>NEXT]
-    M03 --> M04[0.4 Library MVP]
+    M02 --> M03[0.3 Reader MVP<br/>COMPLETE]
+    M03 --> M04[0.4 Library MVP<br/>NEXT]
     M04 --> M05[0.5 Reading Tools]
     M05 --> M06[0.6 Japanese & Accessibility]
     M06 --> M07[0.7 Export Workbench]
@@ -60,22 +60,26 @@ flowchart TD
 
 ### Milestone 0.3: Reader MVP
 
-- **Status**: **Next Priority**
-- **Goal**: _Users can read books._
-- **Scope**:
-  - EPUB rendering engine integration (DOM-based reflowable content layout).
-  - PDF document viewing engine integration.
-  - Interactive Table of Contents (TOC) drawer.
-  - Chapter and page-by-page navigation (mouse, touch, keyboard).
-  - Basic reading settings: font family, font size, line spacing, margins.
-  - Color themes: light, dark, sepia.
-  - Reading position persistence (last page/location remembered across sessions).
+- **Status**: **Complete**
+- **Goal**: _Users can read local EPUB and PDF books with navigation, custom styling, and reading position restore._
+- **Deliverables**:
+  - `@reflowpress/reader`: UI-independent reader state modeling, navigation pure functions, reader settings, and position data structures.
+  - `@reflowpress/desktop`: Desktop application shell powered by Electron 33, React 19, Vite, and PDF.js.
+  - Secure sandboxed EPUB rendering (`sandbox="allow-same-origin"`, script execution blocked).
+  - XHTML sanitization stripping dangerous tags (`<script>`, `<object>`, `<embed>`), inline event attributes, and `javascript:` URLs.
+  - Resource mapping with automatic Blob URL generation and cleanup for stylesheets, fonts, and images.
+  - Native PDF rendering using `pdfjs-dist` on HTML5 `<canvas>` with zoom controls (fit, zoom in/out) and page stepping.
+  - Slide-over Table of Contents drawer with hierarchical navigation jumping.
+  - Typography and themes: Light, Dark, Sepia, font size increment/decrement, typeface selection, and line spacing.
+  - Atomic local reading position persistence (`reader-state.json`) with automatic restoration across restarts.
+  - Architectural documentation: [ADR 0003: Desktop Reader Runtime](adr/0003-desktop-reader-runtime.md).
+  - Comprehensive automated test suite: 57 unit tests + 5 Playwright desktop E2E tests (100% pass rate).
 
 ---
 
 ### Milestone 0.4: Library MVP
 
-- **Status**: Planned
+- **Status**: **Next Priority**
 - **Goal**: _Users can organize their digital library._
 - **Scope**:
   - Local directory scanning and book importing.

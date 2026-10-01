@@ -1,0 +1,30 @@
+{
+  "name": "@reflowpress/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ReflowPress local-first desktop reader workbench",
+  "main": "./dist/main/main.js",
+  "scripts": {
+    "build:main": "tsc -p tsconfig.main.json && node -e \"require('node:fs').copyFileSync('src/preload/preload.cjs', 'dist/preload/preload.cjs')\"",
+    "build:renderer": "vite build",
+    "build": "pnpm build:main && pnpm build:renderer",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@reflowpress/core": "workspace:*",
+    "@reflowpress/epub": "workspace:*",
+    "@reflowpress/reader": "workspace:*",
+    "pdfjs-dist": "^4.10.38",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "typescript": "^6.0.0",
+    "vite": "^6.0.0"
+  }
+}
