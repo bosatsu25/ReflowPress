@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/core" },
     { "path": "./packages/epub" },
+    { "path": "./packages/reader" },
     { "path": "./packages/renderer" },
     { "path": "./packages/pdf" },
     { "path": "./packages/validation" }
