@@ -12,13 +12,14 @@
     "lint": "eslint . && prettier --check .",
     "typecheck": "tsc --noEmit --project tsconfig.typecheck.json --pretty false",
     "test": "vitest run",
-    "build": "tsc -b",
+    "build": "tsc -b && pnpm --filter @reflowpress/desktop build",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.55.0",
     "@types/node": "^22.15.0",
+    "electron": "^33.4.11",
     "eslint": "^10.0.0",
     "globals": "^16.4.0",
     "prettier": "^3.6.2",
