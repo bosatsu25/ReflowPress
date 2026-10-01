@@ -18,13 +18,13 @@ flowchart TD
     end
 
     subgraph CORE_SUB[Publication Core]
-        LOADER[EpubLoader / PdfLoader<br/>planned]
-        PUB_MODEL[Publication Model<br/>planned]
-        NORMALIZED[NormalizedPublication<br/>contract exists; evolution planned]
+        LOADER[EpubLoader<br/>implemented]
+        PUB_MODEL[Publication Model<br/>implemented]
+        NORMALIZED[NormalizedPublication<br/>implemented]
     end
 
     subgraph CONSUMER_SUB[Application Features & Engines]
-        READER[Reader Engine<br/>planned]
+        READER[Reader Engine<br/>planned for 0.3]
         ANNOTATION[Annotation Store<br/>planned]
         LIBRARY[Library Catalog<br/>planned]
         SEARCH[Search Index<br/>planned]
@@ -80,27 +80,59 @@ flowchart LR
     NORMALIZED --> EXPORT[PDF / HTML / MD Exporter]
 ```
 
-### Review of the Current `NormalizedPublication` Contract
+### Milestone 0.2 Implementation: Enhanced `NormalizedPublication` Contract
 
-The existing `NormalizedPublication` in `packages/core` defines:
+In Milestone 0.2, the publication model was enhanced in `@reflowpress/core` without breaking backward compatibility:
 
 ```ts
+export interface NavigationItem {
+  readonly id?: string;
+  readonly label: string;
+  readonly href: string;
+  readonly children?: readonly NavigationItem[];
+}
+
+export interface PublicationMetadata {
+  readonly title?: string;
+  readonly language?: string;
+  readonly identifier?: string;
+  readonly creator?: string | readonly string[];
+  readonly publisher?: string;
+  readonly description?: string;
+  readonly rights?: string;
+  readonly modified?: string;
+  readonly renditionLayout?: "reflowable" | "pre-paginated";
+  readonly renditionOrientation?: "auto" | "portrait" | "landscape";
+  readonly renditionSpread?: "auto" | "none" | "landscape" | "both";
+  readonly direction?: "ltr" | "rtl" | "default";
+}
+
+export interface PublicationSection {
+  readonly id: string;
+  readonly href: string;
+  readonly mediaType: string;
+  readonly markup: string;
+  readonly linear?: boolean;
+}
+
 export interface NormalizedPublication {
-  readonly title: string;
-  readonly sections: readonly PublicationSection[];
-  readonly metadata?: Record<string, unknown>;
+  readonly version?: "2.0" | "3.0" | string;
+  readonly metadata: PublicationMetadata;
+  readonly readingOrder: readonly PublicationSection[];
+  readonly resources: readonly PublicationResource[];
+  readonly navigation?: readonly NavigationItem[];
 }
 ```
 
-While sufficient for early bootstrap validation, this contract is recognized as an early draft that must evolve during **Milestone 0.2** to support workbench features:
+### Shared Parsing Primitives (One Parser Path)
 
-- **Hierarchical Navigation**: Needs dedicated representation for nested Table of Contents, landmarks, and page-lists (derived from EPUB 3 Navigation Document and EPUB 2 NCX).
-- **Rich Dublin Core & Extended Metadata**: Formal typing for creators (with roles), language tags, identifiers, publication dates, and accessibility metadata.
-- **Resource Manifest & Asset Mapping**: Safe URL/blob resolution for images, fonts, audio, and stylesheets linked across sections.
-- **Reading Order & Spreads**: Distinguishing linear reading order from non-linear supplements, as well as spread properties (left, right, center, facing).
-- **Layout & Language Direction**: Directionality attributes (`ltr`, `rtl`, `vertical-rl`) essential for Japanese and bi-directional text.
+`packages/epub` avoids duplicating archive reading and XML/OPF parsing across `inspectEpub` and `EpubLoader`. The shared primitives are:
 
-_Note: In adherence to the Milestone 0.1 non-breaking discipline, no runtime code changes to `NormalizedPublication` are introduced in this documentation milestone. Formal interface enhancements will be implemented and tested in Milestone 0.2._
+- `archive.ts`: Streaming ZIP archive access via `yauzl`, CRC32 validation, entry name safety checks, and strict byte limits.
+- `xml.ts`: Non-DTD XML document parsing with `@xmldom/xmldom` and direct element traversal helpers.
+- `path.ts`: Pure archive-relative path resolution with directory traversal prevention.
+- `package-document.ts`: Unified OPF parsing for EPUB 2/3 metadata, manifest item resolution, spine reading order, and navigation document references.
+- `navigation.ts`: Unified normalization of EPUB 3 Navigation Document (`<nav epub:type="toc">`) and EPUB 2 NCX (`<navMap> <navPoint>`).
 
 ---
 

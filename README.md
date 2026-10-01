@@ -17,10 +17,10 @@ ReflowPress bridges document reading, library organization, publication health i
 ### Current State (`main`)
 
 - **Milestone 0.1 (Foundation)**: **Complete**
-- **EPUB Inspector (`inspectEpub`)**: **Implemented** (Parses ZIP container, `container.xml`, and OPF package document; extracts metadata, manifest, and spine; enforces path safety and resource limits; backed by 22 passing unit tests).
-- **Publication Core Contracts**: **Type-level contracts defined** (`NormalizedPublication`, `PublicationAdapter`, `Renderer`, `PdfValidator`).
-- **Publication Core Implementation (`EpubLoader`)**: **Next (Milestone 0.2)**.
-- **Reader Engine & Viewer UI**: **Planned (Milestone 0.3)**.
+- **Milestone 0.2 (Publication Core)**: **Complete** (Implements `EpubLoader` & `loadEpub`, shared archive parser, EPUB 2/3 navigation normalization, safe XHTML content extraction, auxiliary resources loading, resource boundaries, and DRM detection; verified by 36 unit tests).
+- **EPUB Inspector (`inspectEpub`)**: **Implemented** (Parses ZIP container, `container.xml`, and OPF package document; extracts metadata, manifest, and spine; enforces path safety and resource limits).
+- **Publication Core (`loadEpub`, `EpubLoader`)**: **Implemented** (`NormalizedPublication` model, reading order, navigation hierarchy, metadata, auxiliary assets).
+- **Reader Engine & Viewer UI**: **Next (Milestone 0.3)**.
 - **Library Catalog & Collections**: **Planned (Milestone 0.4)**.
 - **Reading Tools (Search, Notes, Annotations)**: **Planned (Milestone 0.5)**.
 - **Japanese Typography & Accessibility**: **Planned (Milestone 0.6)**.
@@ -43,9 +43,9 @@ flowchart TD
     end
 
     subgraph CORE_SUB[Publication Core]
-        LOADER[EpubLoader / PdfLoader<br/>planned]
-        PUB_MODEL[Publication Model<br/>planned]
-        NORMALIZED[NormalizedPublication<br/>contract exists; evolution planned]
+        LOADER[EpubLoader<br/>implemented]
+        PUB_MODEL[Publication Model<br/>implemented]
+        NORMALIZED[NormalizedPublication<br/>implemented]
     end
 
     subgraph CONSUMER_SUB[Application Features & Engines]
@@ -72,9 +72,23 @@ See the [Architecture v2 Document](docs/architecture.md) and [Diagram Notes](doc
 
 ---
 
-## Using the EPUB Inspector (Implemented)
+## Programmatic API
 
-The programmatic API in `@reflowpress/epub` can inspect any local EPUB archive today:
+### Loading Publications (`loadEpub`) (Implemented in 0.2)
+
+```ts
+import { loadEpub } from "@reflowpress/epub";
+
+const publication = await loadEpub("./book.epub");
+
+console.log("Title:", publication.metadata.title);
+console.log("Version:", publication.version);
+console.log("Chapters:", publication.readingOrder.length);
+console.log("TOC Items:", publication.navigation?.length);
+console.log("Assets:", publication.resources.length);
+```
+
+### Inspecting EPUB Structure (`inspectEpub`) (Implemented in 0.1)
 
 ```ts
 import { inspectEpub } from "@reflowpress/epub";
@@ -117,8 +131,8 @@ Read the complete [Product Vision](docs/product-vision.md) and [ADE Compatibilit
 | Milestone                | Scope                                                                         | Status       |
 | ------------------------ | ----------------------------------------------------------------------------- | ------------ |
 | **0.1 Foundation**       | Monorepo, contracts, CI, and Phase 1 EPUB Inspector                           | **Complete** |
-| **0.2 Publication Core** | EPUB Loader, resources, reading order, navigation, normalization              | **Next**     |
-| **0.3 Reader MVP**       | Reflowable EPUB rendering, PDF viewing, TOC, reading position, themes         | Planned      |
+| **0.2 Publication Core** | EPUB Loader, resources, reading order, navigation, normalization              | **Complete** |
+| **0.3 Reader MVP**       | Reflowable EPUB rendering, PDF viewing, TOC, reading position, themes         | **Next**     |
 | **0.4 Library MVP**      | Local directory scan, covers, metadata catalog, collections, sorting          | Planned      |
 | **0.5 Reading Tools**    | In-book search, bookmarks, highlights, notes, portable annotation export      | Planned      |
 | **0.6 Japanese & A11y**  | Vertical Japanese (`vertical-rl`), ruby, kinsoku, keyboard nav, screen-reader | Planned      |
