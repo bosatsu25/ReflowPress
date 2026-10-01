@@ -12,7 +12,7 @@ ReflowPress provides a reliable, private personal electronic book environment th
 
 To ensure absolute transparency between implemented features and planned milestones:
 
-### Implemented (Milestone 0.1 Foundation)
+### Implemented (Milestones 0.1 Foundation & 0.2 Publication Core)
 
 - TypeScript monorepo with strict typing and pnpm workspaces.
 - Continuous Integration (CI) with lint, typecheck, Vitest, and build gates.
@@ -29,29 +29,35 @@ To ensure absolute transparency between implemented features and planned milesto
   - Dublin Core metadata extraction (title, creator, language, identifier).
   - Manifest item extraction and spine reading order extraction.
   - Safety defenses: rejection of directory traversal paths, external entity attacks, and configurable bounds limits on archive size, entry counts, and XML document sizes.
-  - Automated test suite (22 unit tests) with 100% pass rate.
+- **Publication Core (`EpubLoader`, `loadEpub`)**:
+  - Secure loading of publication content from EPUB 2 and EPUB 3 archives.
+  - Shared parsing primitives (archive, XML, path, OPF) eliminating parser duplication.
+  - Spine reading order preservation with linear flag mapping (`PublicationSection.linear`).
+  - Unified hierarchical navigation normalization for EPUB 3 NavDoc and EPUB 2 NCX (`NavigationItem`).
+  - Safe UTF-8 XHTML content extraction with XML well-formedness verification and DTD rejection.
+  - Auxiliary resource loading (CSS, images, fonts) into `PublicationResource`.
+  - Enriched `NormalizedPublication` and `PublicationMetadata` contracts.
+  - DRM and encryption detection (`META-INF/encryption.xml`, `rights.xml`).
+  - Configurable resource limits (max archive, entries, metadata, markup, resources, total loaded).
+  - Automated test suite: 36 unit tests with 100% pass rate.
 
 ### Contracts Defined (Type-Level Only)
 
-- `NormalizedPublication` (format-neutral publication model contract)
-- `PublicationAdapter` & `EpubPublicationAdapter` (adapter interface contracts)
 - `Renderer` & `VivliostyleRenderer` (renderer interface contracts)
 - `PdfDocument` & `PdfValidator` (PDF output and validation contracts)
 
 ### Not Implemented (Planned in Future Milestones)
 
-- EPUB publication content loader (`EpubLoader`)
-- EPUB to `NormalizedPublication` adapter logic
-- EPUB reader interface & layout engine
-- PDF reader interface
-- Library catalog & collection management
-- Full-text search engine
-- Bookmarks, highlights, and note annotations
-- Portable annotation export (JSON, Markdown, HTML)
-- EPUB to PDF conversion engine
-- PDF Quality Gate automated verification
-- Desktop application GUI (Electron/Tauri)
-- Headless CLI workflow
+- EPUB reader interface & layout engine (Milestone 0.3)
+- PDF reader interface (Milestone 0.3)
+- Library catalog & collection management (Milestone 0.4)
+- Full-text search engine (Milestone 0.5)
+- Bookmarks, highlights, and note annotations (Milestone 0.5)
+- Portable annotation export (JSON, Markdown, HTML) (Milestone 0.5)
+- EPUB to PDF conversion engine (Milestone 0.7)
+- PDF Quality Gate automated verification (Milestone 0.8)
+- Desktop application GUI (Electron/Tauri) (Milestone 1.0)
+- Headless CLI workflow (Milestone 0.7)
 
 ---
 
@@ -74,15 +80,18 @@ To ensure absolute transparency between implemented features and planned milesto
 - [x] Archive safety bounds and malformed entry detection.
 - [x] Comprehensive unit tests (22 tests passing).
 
-### Milestone 0.2: Publication Core (Next)
+### Milestone 0.2: Publication Core (Complete)
 
-- [ ] Implement `EpubLoader` to securely extract and resolve manifest resources from EPUB 2/3 archives.
-- [ ] Parse and normalize EPUB 3 Navigation Document (`nav.xhtml`) and EPUB 2 NCX (`toc.ncx`) into a unified hierarchical TOC.
-- [ ] Resolve internal resource paths (images, fonts, stylesheets) without extracting files to arbitrary disk locations.
-- [ ] Map loaded content into an enhanced `NormalizedPublication` structure.
-- [ ] Verify linear spine reading order and non-linear assets.
+- [x] Implement `EpubLoader` to securely extract and resolve manifest resources from EPUB 2/3 archives.
+- [x] Parse and normalize EPUB 3 Navigation Document (`nav.xhtml`) and EPUB 2 NCX (`toc.ncx`) into a unified hierarchical TOC.
+- [x] Resolve internal resource paths (images, fonts, stylesheets) without extracting files to arbitrary disk locations.
+- [x] Map loaded content into an enhanced `NormalizedPublication` structure.
+- [x] Verify linear spine reading order and non-linear assets.
+- [x] Maintain shared parsing primitives between Inspector and Loader.
+- [x] Detect DRM/encryption and enforce configurable resource limits.
+- [x] Expand automated tests (36 unit tests passing).
 
-### Milestone 0.3: Reader MVP
+### Milestone 0.3: Reader MVP (Next Priority)
 
 - [ ] Render reflowable EPUB chapters in an accessible DOM-based reading viewport.
 - [ ] Render fixed-layout PDF documents in the viewer.

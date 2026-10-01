@@ -13,8 +13,8 @@ A key strategic principle of Roadmap v2 is:
 
 ```mermaid
 flowchart TD
-    M01[0.1 Foundation<br/>COMPLETE] --> M02[0.2 Publication Core<br/>NEXT]
-    M02 --> M03[0.3 Reader MVP]
+    M01[0.1 Foundation<br/>COMPLETE] --> M02[0.2 Publication Core<br/>COMPLETE]
+    M02 --> M03[0.3 Reader MVP<br/>NEXT]
     M03 --> M04[0.4 Library MVP]
     M04 --> M05[0.5 Reading Tools]
     M05 --> M06[0.6 Japanese & Accessibility]
@@ -43,23 +43,24 @@ flowchart TD
 
 ### Milestone 0.2: Publication Core
 
-- **Status**: **Next Priority**
+- **Status**: **Complete**
 - **Goal**: _ReflowPress understands the full content and structure of a publication._
-- **Scope**:
-  - `EpubLoader`: Load and extract publication resources securely from valid EPUB archives.
-  - Document spine ordering and chapter hierarchy mapping.
-  - Navigation parsing: EPUB 3 Navigation Document (`nav.xhtml`) and EPUB 2 NCX (`toc.ncx`) normalization.
-  - Resource resolution: internal asset URLs (images, stylesheets, fonts, XHTML documents).
-  - Normalization pipeline: map parsed EPUB resources into an enriched `NormalizedPublication` model.
-  - EPUB 2 and EPUB 3 compatibility foundation.
-  - Comprehensive unit and integration test fixtures for publication loading.
-- **Exit Criteria**: `loadPublication(path)` loads any compliant, DRM-free EPUB 2/3 file and outputs a fully structured, memory-safe publication object ready for both readers and exporters.
+- **Deliverables**:
+  - `EpubLoader` & `loadEpub`: Securely load publication resources from valid EPUB archives.
+  - Shared archive and XML primitives eliminating duplicate parsers.
+  - Spine reading order preservation with linear flag mapping.
+  - Unified navigation normalization for EPUB 3 Navigation Document (`nav.xhtml`) and EPUB 2 NCX (`toc.ncx`).
+  - Safe XHTML content extraction with XML well-formedness and DTD defense.
+  - Auxiliary resources loading (CSS, images, fonts).
+  - Enriched `NormalizedPublication` and `PublicationMetadata` contracts.
+  - Configurable resource bounds and DRM/encryption detection.
+  - 14 new automated unit tests (36 unit tests total).
 
 ---
 
 ### Milestone 0.3: Reader MVP
 
-- **Status**: Planned
+- **Status**: **Next Priority**
 - **Goal**: _Users can read books._
 - **Scope**:
   - EPUB rendering engine integration (DOM-based reflowable content layout).

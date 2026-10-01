@@ -62,9 +62,9 @@ flowchart TD
 
 | Level / Layer                             | Scope and Focus                                                                                          | Current Status                                        | Target Milestone     |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | -------------------- |
-| **1. Unit Tests**                         | Pure business logic, bounds checks, timestamp formatting, contract typing.                               | **Implemented (22 tests passing)**                    | 0.1                  |
+| **1. Unit Tests**                         | Pure business logic, bounds checks, timestamp formatting, contract typing.                               | **Implemented (36 tests passing)**                    | 0.1 & 0.2            |
 | **2. Parser & Adapter Integration**       | EPUB Inspector archive parsing, container/OPF extraction, path traversal rejection.                      | **Implemented (`tests/unit/epub-inspector.test.ts`)** | 0.1                  |
-| **3. Publication Compatibility**          | Validation of real-world EPUB 2 and EPUB 3 samples (IDPF / W3C test suites).                             | Planned                                               | 0.2                  |
+| **3. Publication Compatibility**          | Validation of EPUB 2 and EPUB 3 loading, navigation normalization, content reading.                      | **Implemented (`tests/unit/epub-loader.test.ts`)**    | 0.2                  |
 | **4. Reader Rendering**                   | DOM layout verification, vertical Japanese flow, ruby positioning, chapter transitions.                  | Planned                                               | 0.3 & 0.6            |
 | **5. Accessibility (a11y)**               | Keyboard navigation loops, focus order, ARIA attributes, contrast ratios.                                | Planned                                               | 0.6                  |
 | **6. Annotation & Storage**               | Anchor stability against DOM variations, SQLite/JSON schema migrations, data durability.                 | Planned                                               | 0.4 & 0.5            |
@@ -78,23 +78,31 @@ _Note: In adherence to our transparency principles, planned layers are not recor
 
 ---
 
-## Applied Test Design Techniques (Phase 1 Baseline)
+## Applied Test Design Techniques
 
-The existing EPUB Inspector suite applies standard test design techniques to ensure resilient boundaries:
+The test suite applies standard test design techniques across the Inspector and Loader pipelines:
 
-| Technique                    | Applied Specification in ReflowPress                                                                                                              | Current Status   |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| **Equivalence Partitioning** | Valid minimal EPUB archives, corrupted ZIP binaries, absent container XML, malformed package XML, missing manifest files, missing spine items.    | Implemented      |
-| **Boundary Value Analysis**  | Max archive byte limits (128 MiB), max entry counts (20,000 entries), max metadata XML document size (4 MiB), zero vs single spine items.         | Implemented      |
-| **Decision Table Testing**   | Validating permutations of archive condition -> container presence -> OPF validity -> manifest target existence -> result / error classification. | Implemented      |
-| **Error Guessing**           | Archive path traversal attacks (`../`), DTD entity expansion attacks, absolute root paths, Windows backslash vs Unix slash ambiguities.           | Implemented      |
-| **State Transition Testing** | Document progression: Discovered -> Inspected -> Normalized -> Rendered -> Exported -> Validated.                                                 | Planned for 0.2+ |
+| Technique                    | Applied Specification in ReflowPress                                                                                                            | Current Status   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| **Equivalence Partitioning** | Valid minimal EPUB 2/3, missing container/OPF/spine/nav, malformed XML, missing manifest files, missing spine items.                            | Implemented      |
+| **Boundary Value Analysis**  | Max archive bytes (128 MiB), max entries (20,000), metadata XML size (4 MiB), markup size (8 MiB), resource size (16 MiB), zero vs spine items. | Implemented      |
+| **Decision Table Testing**   | Permutations of archive state -> container presence -> OPF validity -> spine references -> NavDoc/NCX type -> normalized publication model.     | Implemented      |
+| **Error Guessing**           | Archive traversal (`../`), DTD entity expansion, absolute root paths, DRM encryption detection, external URI references in markup.              | Implemented      |
+| **State Transition Testing** | Document progression: Discovered -> Inspected -> Normalized -> Rendered -> Exported -> Validated.                                               | Planned for 0.3+ |
 
 ---
 
-## Existing EPUB Inspector Test Suite (`tests/unit`)
+## Test Suites in `tests/unit` (36 Tests Total)
 
-The 22 active tests exercise the following concrete input classes:
+### 1. Contract Tests (`tests/unit/contracts.test.ts`, 3 tests)
+
+- Verifies format-neutral publication model independent of source format.
+- Validates `PublicationAdapter` contract conformance.
+- Validates `Renderer` contract conformance.
+
+### 2. EPUB Inspector Test Suite (`tests/unit/epub-inspector.test.ts`, 19 tests)
+
+The 19 inspector tests exercise the following concrete input classes:
 
 | Test Classification            | Test Input Conditions                                                        | Expected Error or Behavior                                           |
 | ------------------------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------------- |
@@ -108,6 +116,27 @@ The 22 active tests exercise the following concrete input classes:
 | `MANIFEST_REFERENCE_NOT_FOUND` | Item listed in manifest but corresponding file missing from ZIP              | `MANIFEST_REFERENCE_NOT_FOUND`                                       |
 | `SECURITY_PATH_TRAVERSAL`      | ZIP entry name or package reference contains `../` escaping root             | Rejected with appropriate path safety error                          |
 | `BOUNDS_EXCEEDED`              | Archive size, entry count, or metadata XML size exceeds configured threshold | Rejected with limits exceeded error                                  |
+
+### 3. EPUB Publication Loader Test Suite (`tests/unit/epub-loader.test.ts`, 14 tests)
+
+The 14 publication loading tests exercise the following concrete scenarios:
+
+| Test Classification        | Test Conditions                                           | Verified Behaviors                                                           |
+| -------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `EPUB3_MINIMAL`            | Minimal valid EPUB 3 with metadata, manifest, spine, nav  | Correct `NormalizedPublication`, reading order, TOC items, UTF-8 markup      |
+| `EPUB3_SPINE_LINEAR`       | Multi-chapter spine with `linear="no"` items              | Reading order preserved; `linear` boolean flag mapped accurately             |
+| `EPUB3_NESTED_NAV`         | Navigation Document with multi-level `<ol> <li> <ol>`     | Hierarchical `NavigationItem` tree with nested children                      |
+| `EPUB3_RESOURCES`          | Manifest containing CSS, images, and fonts                | Loaded into `PublicationResource` as `Uint8Array` bytes                      |
+| `EPUB3_METADATA_RENDITION` | Metadata with `rendition:layout`, `direction`, etc.       | Full typing for pre-paginated layout, orientation, and RTL direction         |
+| `EPUB2_MINIMAL_NCX`        | Valid EPUB 2 archive with OPF 2.0 and `toc.ncx`           | Normalized `version: "2.0"` and NCX nav points extracted to `NavigationItem` |
+| `EPUB2_NESTED_NCX`         | Multi-level nested `<navPoint>` hierarchy                 | Nested `children` correctly parsed in unified navigation tree                |
+| `ADAPTER_CONFORMANCE`      | `EpubLoader` class implementing `EpubPublicationAdapter`  | `canRead` pattern matching on path and media type; `read` execution          |
+| `DRM_DETECTION`            | Archive contains `META-INF/encryption.xml`                | Rejected with `DRM_PROTECTED_PUBLICATION` error                              |
+| `CONTENT_NOT_FOUND`        | Manifest lists spine content file missing from ZIP        | Rejected with `MANIFEST_REFERENCE_NOT_FOUND`                                 |
+| `CONTENT_MALFORMED`        | Content XHTML file contains unclosed tags or syntax error | Rejected with `INVALID_CONTENT_DOCUMENT` error                               |
+| `CONTENT_DTD_ATTACK`       | Content XHTML declares `<!DOCTYPE` with external URI      | Rejected with `INVALID_CONTENT_DOCUMENT` before entity resolution            |
+| `LIMIT_EXCEEDED`           | Content XHTML exceeds configured `maxMarkupBytes`         | Rejected with `RESOURCE_LIMIT_EXCEEDED` error                                |
+| `NO_NETWORK_FETCH`         | Markup contains `http://` and `https://` remote URLs      | Loaded safely as string without executing external network fetches           |
 
 ---
 
