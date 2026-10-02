@@ -12,7 +12,7 @@ ReflowPress bridges document reading, library organization, publication health i
 
 > [!IMPORTANT]
 > **ReflowPress is in active foundation development.**
-> Do not mistake planned functionality for implemented features. The desktop reader GUI, PDF conversion, library management, and repair tools are **planned for future milestones**.
+> Do not mistake planned functionality for implemented features. The desktop reader GUI is **implemented (Milestone 0.3)**. Library management, reading tools, PDF conversion, and repair tools are **planned for future milestones**.
 
 ### Current State (`main`)
 
