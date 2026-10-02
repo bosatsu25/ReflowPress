@@ -7,10 +7,13 @@ export interface HeaderProps {
   hasToc: boolean;
   tocOpen: boolean;
   theme: ReaderSettings["theme"];
+  viewMode?: "library" | "reader";
   onOpenFile: () => void;
   onToggleToc: () => void;
   onOpenSettings: () => void;
   onCloseDocument: () => void;
+  onSwitchToLibrary?: () => void;
+  onSwitchToReader?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -19,10 +22,13 @@ export const Header: React.FC<HeaderProps> = ({
   hasToc,
   tocOpen,
   theme,
+  viewMode = "reader",
   onOpenFile,
   onToggleToc,
   onOpenSettings,
   onCloseDocument,
+  onSwitchToLibrary,
+  onSwitchToReader,
 }) => {
   const isDark = theme === "dark";
   const isSepia = theme === "sepia";
@@ -55,7 +61,33 @@ export const Header: React.FC<HeaderProps> = ({
           minWidth: 0,
         }}
       >
-        {hasDocument && (
+        {/* If in Reader mode, provide Back to Library button */}
+        {viewMode === "reader" && onSwitchToLibrary && (
+          <button
+            type="button"
+            onClick={onSwitchToLibrary}
+            aria-label="Back to Library"
+            title="Return to Library (Esc)"
+            style={{
+              padding: "6px 10px",
+              cursor: "pointer",
+              border: `1px solid ${borderColor}`,
+              borderRadius: "4px",
+              background: "transparent",
+              color: textColor,
+              fontSize: "13px",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              fontWeight: 500,
+            }}
+          >
+            <span>←</span>
+            <span>Library</span>
+          </button>
+        )}
+
+        {viewMode === "reader" && hasDocument && (
           <button
             type="button"
             onClick={onToggleToc}
@@ -91,6 +123,31 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
+        {viewMode === "library" && hasDocument && onSwitchToReader && (
+          <button
+            type="button"
+            onClick={onSwitchToReader}
+            aria-label="Resume Reading"
+            title="Return to open document"
+            style={{
+              padding: "6px 10px",
+              cursor: "pointer",
+              border: `1px solid ${borderColor}`,
+              borderRadius: "4px",
+              background: isDark ? "#2563eb" : "#3b82f6",
+              color: "#ffffff",
+              fontSize: "13px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              fontWeight: 500,
+            }}
+          >
+            <span>📖</span>
+            <span>Resume Reading</span>
+          </button>
+        )}
+
         <span
           className="header-title"
           title={title}
@@ -103,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
             maxWidth: "450px",
           }}
         >
-          {title || "ReflowPress"}
+          {title || "ReflowPress Workbench"}
         </span>
       </div>
 
@@ -144,7 +201,7 @@ export const Header: React.FC<HeaderProps> = ({
           ⚙ Settings
         </button>
 
-        {hasDocument && (
+        {viewMode === "reader" && hasDocument && (
           <button
             type="button"
             onClick={onCloseDocument}
