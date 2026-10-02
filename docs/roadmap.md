@@ -15,8 +15,8 @@ A key strategic principle of Roadmap v2 is:
 flowchart TD
     M01[0.1 Foundation<br/>COMPLETE] --> M02[0.2 Publication Core<br/>COMPLETE]
     M02 --> M03[0.3 Reader MVP<br/>COMPLETE]
-    M03 --> M04[0.4 Library MVP<br/>NEXT]
-    M04 --> M05[0.5 Reading Tools]
+    M03 --> M04[0.4 Library MVP<br/>COMPLETE]
+    M04 --> M05[0.5 Reading Tools<br/>NEXT]
     M05 --> M06[0.6 Japanese & Accessibility]
     M06 --> M07[0.7 Export Workbench]
     M07 --> M08[0.8 Quality & Repair]
@@ -79,21 +79,23 @@ flowchart TD
 
 ### Milestone 0.4: Library MVP
 
-- **Status**: **Next Priority**
-- **Goal**: _Users can organize their digital library._
-- **Scope**:
-  - Local directory scanning and book importing.
-  - Cover extraction and thumbnail caching.
-  - Metadata indexing (title, author, publisher, series, language, tags).
-  - User collections, custom shelves, and tag management.
-  - Sorting (by title, author, date added, recent reading) and instant filtering.
-  - Local database persistence (embedded SQLite or JSON-based local catalog).
+- **Status**: **Complete**
+- **Goal**: _Users can organize their digital library with local-first persistence, collections, and fast search._
+- **Deliverables**:
+  - `@reflowpress/library`: UI-independent catalog modeling, pure filtering and sorting operations, tag normalization, collection management, and `LibraryRepository` contract.
+  - Versioned atomic JSON catalog persistence (`library-v1.json`) with temporary write, `fsync`, atomic rename, and quarantine recovery for corrupted files (`.corrupt-<timestamp>`).
+  - Recursive local directory scanner with incremental scanning (skipping unchanged files based on size and mtimeMs) and stable SHA-256 book identity.
+  - Automated EPUB cover extraction and caching into `userData/library-cache/covers/` with sandboxed data URI bridge.
+  - Desktop Workbench UI: Library view with responsive Grid and List layouts, multi-field search (title, author, publisher, tags), format categories (EPUB, PDF), custom shelves/collections, and direct reader launch.
+  - Seamless navigation between Library view and Reader MVP via "← Library" and "Resume Reading" header actions.
+  - Architectural documentation: [ADR 0004: Library Persistence Architecture and Repository Abstraction](adr/0004-library-persistence.md).
+  - Automated test suite: 72 unit tests + 10 Playwright desktop E2E tests (100% pass rate).
 
 ---
 
 ### Milestone 0.5: Reading Tools
 
-- **Status**: Planned
+- **Status**: **Next Priority**
 - **Goal**: _ReflowPress serves as an everyday personal reading environment._
 - **Scope**:
   - In-book full-text search with keyword highlighting and snippet previews.
