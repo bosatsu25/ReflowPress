@@ -52,9 +52,9 @@ export async function findPublicationFiles(
 }
 
 export function computeBookId(normalizedFilePath: string): string {
-  return createHash("sha256")
-    .update(path.normalize(normalizedFilePath).toLowerCase())
-    .digest("hex");
+  const normalizedSeparators = normalizedFilePath.replace(/\\/g, "/");
+  const canonical = path.posix.normalize(normalizedSeparators).toLowerCase();
+  return createHash("sha256").update(canonical).digest("hex");
 }
 
 export async function extractEpubMetadataAndCover(
