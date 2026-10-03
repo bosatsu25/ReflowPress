@@ -314,6 +314,71 @@ flowchart TD
 
 ---
 
+## Reading Tools Subsystem & Annotation Architecture (Milestone 0.5)
+
+Milestone 0.5 evolves ReflowPress into an active reading workbench by introducing in-book full-text search, persistent bookmarks, multi-color text highlights, margin notes, and portable export/import capabilities.
+
+```mermaid
+flowchart TD
+    UI[Reader Workbench UI<br/>ReadingToolsDrawer, SelectionToolbar, Header]
+    BRIDGE[Desktop IPC Bridge<br/>reflowPressDesktop.annotations]
+    IPC[Main Process Dispatcher<br/>apps/desktop/src/main/ipc.ts]
+
+    subgraph SEARCH_DOMAIN[packages/search — Pure Search Engine]
+        EXTRACTOR[TextExtractor<br/>Tag stripping, entity decoding, snippet math]
+        EPUB_SEARCH[EpubSearchEngine<br/>Section walk, regex/case-insensitive search]
+        PDF_SEARCH[PdfSearchEngine<br/>Multi-page text layer extraction]
+    end
+
+    subgraph ANNOTATIONS_DOMAIN[packages/annotations — Pure Domain Logic]
+        MODELS[Models: Highlight, Note, Bookmark, PublicationLocator]
+        ANCHOR[Anchoring Engine<br/>W3C Web Annotation Selector disambiguation]
+        OPERATIONS[Domain Operations: createHighlight, addNote, toggleBookmark]
+        SERIALIZERS[Export/Import Serializers<br/>JSON, Markdown, Escaped HTML]
+        REPO_IF[AnnotationRepository Interface]
+    end
+
+    subgraph MAIN_PERSIST[apps/desktop/src/main — Persistence & File Dialogs]
+        JSON_REPO[JsonAnnotationRepository<br/>annotations-v1.json<br/>Serialized Queue, Atomic write & Corrupt Quarantine]
+        DIALOGS[File Dialogs<br/>Save/Open for Export & Import]
+    end
+
+    UI --> BRIDGE --> IPC
+    UI --> SEARCH_DOMAIN
+    UI --> ANNOTATIONS_DOMAIN
+    IPC --> JSON_REPO
+    IPC --> DIALOGS
+    JSON_REPO -. implements .-> REPO_IF
+```
+
+### Architectural Key Decisions & Safeguards:
+
+1. **W3C Web Annotation Compliant Hybrid Locators (`PublicationLocator`)**:
+   - Anchoring relies on a composite locator rather than fragile single-strategy offsets or brittle DOM XPaths:
+     - **EPUB**: Combines `sectionHref` + `TextQuoteSelector` (`exact`, `prefix`, `suffix`) + `TextPositionSelector` (`start`, `end`).
+     - **PDF**: Combines `page` (1-based index) + `TextQuoteSelector` + optional bounding rects.
+   - Robust against font resizing, reader window resizing, theme changes, and minor publisher markup updates.
+   - Disambiguation engine uses surrounding prefix/suffix context to match the exact intended text occurrence even when repeated words occur within the same chapter.
+
+2. **Pure Search Engine (`@reflowpress/search`)**:
+   - `TextExtractor` removes markup elements (`<script>`, `<style>`, XML comments), decodes character and numeric entities, and builds unified plain-text layers.
+   - Produces localized snippet previews with exact character boundaries and surrogate-pair safety.
+   - Decoupled from renderer UI and desktop IPC, enabling headless CLI or worker thread execution.
+
+3. **Versioned Atomic Annotation Storage (`annotations-v1.json`)**:
+   - `JsonAnnotationRepository` guarantees crash-safety using a serialized promise queue, write-to-temp-file (`.tmp-<timestamp>`), `fsync`, and atomic rename.
+   - **Corrupt Quarantine**: Invalid or unparseable JSON files are automatically quarantined to `.corrupt-<timestamp>` with warnings, safeguarding user data from silent overwrites.
+   - **Version Guard**: Prevents older software from overwriting newer future schema versions.
+
+4. **Portable Knowledge Management (PKM) Export & Import**:
+   - **Markdown**: Clean, human-readable export with publication metadata, blockquotes, notes, bookmarks, and timestamps.
+   - **HTML**: Standalone, styled document with zero external dependencies and full XSS-safe attribute/text escaping.
+   - **JSON**: Complete structured serialization enabling backup, tool migration, and bi-directional import with duplicate deduplication and ID-conflict remapping.
+   - Source publications (EPUB/PDF) are **never** modified or mutated.
+   - Full rationale documented in [ADR 0005: Annotation Locators, Selectors, and Storage Architecture](adr/0005-annotation-locators-and-storage.md).
+
+---
+
 ## AI Policy & Integration Stance
 
 1. **Non-Dependency**: AI is strictly optional. ReflowPress is completely usable, fast, and feature-complete in 100% offline, air-gapped environments without any AI components.

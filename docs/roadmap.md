@@ -16,8 +16,8 @@ flowchart TD
     M01[0.1 Foundation<br/>COMPLETE] --> M02[0.2 Publication Core<br/>COMPLETE]
     M02 --> M03[0.3 Reader MVP<br/>COMPLETE]
     M03 --> M04[0.4 Library MVP<br/>COMPLETE]
-    M04 --> M05[0.5 Reading Tools<br/>NEXT]
-    M05 --> M06[0.6 Japanese & Accessibility]
+    M04 --> M05[0.5 Reading Tools<br/>COMPLETE]
+    M05 --> M06[0.6 Japanese & Accessibility<br/>NEXT]
     M06 --> M07[0.7 Export Workbench]
     M07 --> M08[0.8 Quality & Repair]
     M08 --> M09[0.9 Interoperability]
@@ -95,21 +95,27 @@ flowchart TD
 
 ### Milestone 0.5: Reading Tools
 
-- **Status**: **Next Priority**
-- **Goal**: _ReflowPress serves as an everyday personal reading environment._
-- **Scope**:
-  - In-book full-text search with keyword highlighting and snippet previews.
-  - Bookmarks with jump-to-location functionality.
-  - Text selection highlights with multi-color support.
-  - Margin notes and commentary attached to highlighted ranges.
-  - Search across all personal annotations and highlights.
-  - **Portable Annotations**: Export highlights and notes to JSON, clean Markdown, and HTML for personal knowledge management (PKM).
+- **Status**: **Complete**
+- **Goal**: _ReflowPress serves as an everyday personal reading environment with precision search, annotations, and notes._
+- **Deliverables**:
+  - `@reflowpress/annotations`: Pure domain package defining W3C Web Annotation-compliant hybrid locators, highlights, notes, bookmarks, and operations.
+  - `@reflowpress/search`: Pure domain package providing streaming in-book full-text search with HTML tag stripping, entity decoding, context snippet extraction, and PDF multi-page extraction.
+  - W3C Web Annotation hybrid selector anchoring: combines `sectionHref` + `TextQuoteSelector` (`exact`, `prefix`, `suffix`) + `TextPositionSelector` (`start`, `end`) for robust highlight re-anchoring across reflow.
+  - Multi-color highlights (yellow, green, blue, pink) with floating selection toolbar and DOM `<mark class="reflowpress-highlight">` injection.
+  - Bookmarks with jump-to-location functionality and keyboard shortcut (`Ctrl+D`).
+  - Margin notes and commentary attached to highlighted ranges with in-drawer editing.
+  - In-book full-text search with keyword highlighting, snippet previews, search result jump navigation, and keyboard shortcut (`Ctrl+F`).
+  - Annotation search across all notes, bookmarks, and highlights.
+  - Versioned atomic JSON persistence (`annotations-v1.json`) with corrupt file quarantine (`.corrupt-<timestamp>`) and write serialization queue.
+  - **Portable Annotations**: Export highlights and notes to JSON, clean Markdown, and standalone escaped HTML for personal knowledge management (PKM), plus JSON import with merge conflict handling.
+  - Architectural documentation: [ADR 0005: Annotation Locators, Selectors, and Storage Architecture](adr/0005-annotation-locators-and-storage.md).
+  - Automated test suite: 104 unit tests + 15 Playwright desktop E2E tests (100% pass rate).
 
 ---
 
 ### Milestone 0.6: Japanese Typography & Accessibility
 
-- **Status**: Planned
+- **Status**: **Next Priority**
 - **Goal**: _World-class Japanese document support and comprehensive accessibility._
 - **Scope**:
   - Vertical text layout support (`writing-mode: vertical-rl`) with vertical paging.

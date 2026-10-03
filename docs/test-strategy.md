@@ -60,19 +60,19 @@ flowchart TD
 
 ### Detailed Layer Breakdown
 
-| Level / Layer                             | Scope and Focus                                                                                          | Current Status                                                                                         | Target Milestone               |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------ |
-| **1. Unit Tests**                         | Pure business logic, bounds checks, timestamp formatting, contract typing, catalog domain.               | **Implemented (72 tests passing across 8 suites)**                                                     | 0.1, 0.2, 0.3 & 0.4            |
-| **2. Parser & Adapter Integration**       | EPUB Inspector archive parsing, container/OPF extraction, path traversal rejection.                      | **Implemented (`tests/unit/epub-inspector.test.ts`)**                                                  | 0.1                            |
-| **3. Publication Compatibility**          | Validation of EPUB 2 and EPUB 3 loading, navigation normalization, content reading.                      | **Implemented (`tests/unit/epub-loader.test.ts`)**                                                     | 0.2                            |
-| **4. Reader Rendering & State**           | DOM layout verification, sandboxed iframe isolation, XHTML sanitization, canvas PDF rendering.           | **Implemented (`tests/unit/reader-domain.test.ts`, `tests/e2e/reader-desktop.spec.ts`)**               | 0.3 & 0.6                      |
-| **5. Accessibility (a11y)**               | Keyboard navigation loops, focus order, ARIA attributes, contrast ratios.                                | Planned                                                                                                | 0.6                            |
-| **6. Storage & Catalog Persistence**      | Atomic JSON state files, corrupted state quarantine, position persistence across sessions.               | **Implemented (`tests/unit/desktop-storage.test.ts`, `tests/unit/library-persistence.test.ts`)**       | 0.3, 0.4 & 0.5                 |
-| **7. Library Scanning & Indexing**        | Recursive filesystem scan, incremental mtime/size checks, EPUB cover extraction, collection management.  | **Implemented (`tests/unit/library-domain.test.ts`, `tests/unit/library-scanner.test.ts`)**            | 0.4                            |
-| **8. Export Transformation**              | Markdown/HTML structure preservation, metadata fidelity, collision-safe filename generation.             | Planned                                                                                                | 0.7                            |
-| **9. PDF Validation Gate**                | Automated checks verifying text extractability, embedded font subsetting, image dimensions, openability. | Planned                                                                                                | 0.8                            |
-| **10. Visual Regression & Golden Master** | Headless browser rendering comparison against reviewed pixel baselines; invariant structural diffing.    | Planned                                                                                                | 0.8                            |
-| **11. End-to-End (E2E)**                  | Full desktop GUI flows (Playwright Electron) for Reader and Library subsystems.                          | **Implemented (`tests/e2e/reader-desktop.spec.ts`, `tests/e2e/library-desktop.spec.ts` - 10 passing)** | 0.3 & 0.4 (Desktop), 0.7 (CLI) |
+| Level / Layer                             | Scope and Focus                                                                                          | Current Status                                                                                                                                    | Target Milestone                    |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| **1. Unit Tests**                         | Pure business logic, bounds checks, timestamp formatting, contract typing, catalog & annotation domain.  | **Implemented (104 tests passing across 12 suites)**                                                                                              | 0.1, 0.2, 0.3, 0.4 & 0.5            |
+| **2. Parser & Adapter Integration**       | EPUB Inspector archive parsing, container/OPF extraction, path traversal rejection.                      | **Implemented (`tests/unit/epub-inspector.test.ts`)**                                                                                             | 0.1                                 |
+| **3. Publication Compatibility**          | Validation of EPUB 2 and EPUB 3 loading, navigation normalization, content reading.                      | **Implemented (`tests/unit/epub-loader.test.ts`)**                                                                                                | 0.2                                 |
+| **4. Reader Rendering & State**           | DOM layout verification, sandboxed iframe isolation, XHTML sanitization, canvas PDF rendering.           | **Implemented (`tests/unit/reader-domain.test.ts`, `tests/e2e/reader-desktop.spec.ts`)**                                                          | 0.3 & 0.6                           |
+| **5. Accessibility (a11y)**               | Keyboard navigation loops, focus order, ARIA attributes, contrast ratios.                                | Planned                                                                                                                                           | 0.6                                 |
+| **6. Storage & Catalog Persistence**      | Atomic JSON state files, corrupted state quarantine, position & annotation persistence across sessions.  | **Implemented (`tests/unit/desktop-storage.test.ts`, `tests/unit/library-persistence.test.ts`, `tests/unit/annotations-persistence.test.ts`)**    | 0.3, 0.4 & 0.5                      |
+| **7. Library Scanning & Indexing**        | Recursive filesystem scan, incremental mtime/size checks, EPUB cover extraction, collection management.  | **Implemented (`tests/unit/library-domain.test.ts`, `tests/unit/library-scanner.test.ts`)**                                                       | 0.4                                 |
+| **8. Export Transformation**              | Markdown/HTML/JSON annotation export, metadata fidelity, collision-safe filename generation.             | **Implemented for annotations (`tests/unit/annotations-export-import.test.ts`)**; Planned for EPUB-to-PDF                                         | 0.5 & 0.7                           |
+| **9. PDF Validation Gate**                | Automated checks verifying text extractability, embedded font subsetting, image dimensions, openability. | Planned                                                                                                                                           | 0.8                                 |
+| **10. Visual Regression & Golden Master** | Headless browser rendering comparison against reviewed pixel baselines; invariant structural diffing.    | Planned                                                                                                                                           | 0.8                                 |
+| **11. End-to-End (E2E)**                  | Full desktop GUI flows (Playwright Electron) for Reader, Library, and Reading Tools subsystems.          | **Implemented (`tests/e2e/reader-desktop.spec.ts`, `tests/e2e/library-desktop.spec.ts`, `tests/e2e/reading-tools-desktop.spec.ts` - 15 passing)** | 0.3, 0.4 & 0.5 (Desktop), 0.7 (CLI) |
 
 _Note: In adherence to our transparency principles, planned layers are not recorded as implemented until automated test suites exist and pass in CI._
 
@@ -80,19 +80,19 @@ _Note: In adherence to our transparency principles, planned layers are not recor
 
 ## Applied Test Design Techniques
 
-The test suite applies standard test design techniques across the Inspector, Loader, Reader, and Library pipelines:
+The test suite applies standard test design techniques across the Inspector, Loader, Reader, Library, and Reading Tools pipelines:
 
-| Technique                    | Applied Specification in ReflowPress                                                                                                            | Current Status           |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| **Equivalence Partitioning** | Valid minimal EPUB 2/3, missing container/OPF/spine/nav, malformed XML, missing manifest files, missing spine items.                            | Implemented              |
-| **Boundary Value Analysis**  | Max archive bytes (128 MiB), max entries (20,000), metadata XML size (4 MiB), markup size (8 MiB), resource size (16 MiB), zero vs spine items. | Implemented              |
-| **Decision Table Testing**   | Permutations of archive state -> container presence -> OPF validity -> spine references -> NavDoc/NCX type -> normalized publication model.     | Implemented              |
-| **Error Guessing**           | Archive traversal (`../`), DTD entity expansion, absolute root paths, DRM encryption detection, corrupted JSON recovery, quarantined catalogs.  | Implemented              |
-| **State Transition Testing** | Document progression: Discovered -> Inspected -> Normalized -> Rendered -> Exported -> Validated; Library <-> Reader round-trips.               | Implemented in 0.3 & 0.4 |
+| Technique                    | Applied Specification in ReflowPress                                                                                                           | Current Status                |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| **Equivalence Partitioning** | Valid minimal EPUB 2/3, missing container/OPF/spine/nav, malformed XML, missing manifest files, missing spine items, text quote selectors.     | Implemented                   |
+| **Boundary Value Analysis**  | Max archive bytes (128 MiB), max entries (20,000), metadata XML size (4 MiB), markup size (8 MiB), resource size (16 MiB), snippet extraction. | Implemented                   |
+| **Decision Table Testing**   | Permutations of archive state -> container presence -> OPF validity -> spine references -> NavDoc/NCX type -> normalized publication model.    | Implemented                   |
+| **Error Guessing**           | Archive traversal (`../`), DTD entity expansion, absolute root paths, DRM encryption detection, corrupted JSON recovery, quarantined catalogs. | Implemented                   |
+| **State Transition Testing** | Document progression: Discovered -> Inspected -> Normalized -> Rendered -> Exported -> Validated; Library <-> Reader <-> Annotations.          | Implemented in 0.3, 0.4 & 0.5 |
 
 ---
 
-## Test Suites in `tests/unit` (72 Tests Total Across 8 Suites)
+## Test Suites in `tests/unit` (104 Tests Total Across 12 Suites)
 
 1. **Contract Tests** (`tests/unit/contracts.test.ts`, 3 tests)
 2. **EPUB Inspector Test Suite** (`tests/unit/epub-inspector.test.ts`, 19 tests)
@@ -102,13 +102,18 @@ The test suite applies standard test design techniques across the Inspector, Loa
 6. **Library Domain Test Suite** (`tests/unit/library-domain.test.ts`, 7 tests)
 7. **Library Persistence & Recovery Test Suite** (`tests/unit/library-persistence.test.ts`, 4 tests)
 8. **Library Scanner Test Suite** (`tests/unit/library-scanner.test.ts`, 4 tests)
+9. **Annotations Domain Test Suite** (`tests/unit/annotations-domain.test.ts`, 10 tests)
+10. **Annotations Persistence & Recovery Test Suite** (`tests/unit/annotations-persistence.test.ts`, 5 tests)
+11. **Annotations Export & Import Test Suite** (`tests/unit/annotations-export-import.test.ts`, 6 tests)
+12. **In-Book Search Test Suite** (`tests/unit/search.test.ts`, 11 tests)
 
 ---
 
-## Playwright Desktop E2E Suites (`tests/e2e`, 10 Tests Total)
+## Playwright Desktop E2E Suites (`tests/e2e`, 15 Tests Total)
 
 1. **Reader MVP Desktop E2E** (`tests/e2e/reader-desktop.spec.ts`, 5 tests)
 2. **Library MVP Desktop E2E** (`tests/e2e/library-desktop.spec.ts`, 5 tests)
+3. **Reading Tools Desktop E2E** (`tests/e2e/reading-tools-desktop.spec.ts`, 5 tests)
 
 ---
 
@@ -124,10 +129,7 @@ The test suite applies standard test design techniques across the Inspector, Loa
    pnpm audit --prod
    ```
 2. **CI Gates**:
-   - `verify`: Runs on `ubuntu-latest` running lint, typecheck, vitest (72 tests), and build.
-   - `desktop-e2e`: Runs on `ubuntu-latest` under `xvfb-run -a pnpm test:e2e` (10 tests) with automated failure artifact capture.
-   ```
-
-   ```
+   - `verify`: Runs on `ubuntu-latest` running lint, typecheck, vitest (104 tests), and build.
+   - `desktop-e2e`: Runs on `ubuntu-latest` under `xvfb-run -a pnpm test:e2e` (15 tests) with automated failure artifact capture.
 3. **Deterministic CI Pipeline**: GitHub Actions runs on `ubuntu-latest` with Node.js 22, verifying formatting, strict typing, unit tests, and workspace builds on every PR and push to `main`.
 4. **Golden Master Stability**: When golden master and visual regression suites are introduced in Milestone 0.8, raw byte comparisons will be avoided in favor of normalized structural comparisons to prevent false positives from timestamp or compression differences.

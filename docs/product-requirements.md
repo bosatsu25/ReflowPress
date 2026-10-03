@@ -122,15 +122,15 @@ To ensure absolute transparency between implemented features and planned milesto
 - [x] Provide real-time sorting (title, author, recently read, date added) and filtering.
 - [x] Store library catalog locally in an embedded, zero-config, versioned atomic JSON repository with corrupt file quarantine.
 
-### Milestone 0.5: Reading Tools (Next Priority)
+### Milestone 0.5: Reading Tools (Complete)
 
-- [ ] Full-text search within the open publication with highlighted search hit navigation.
-- [ ] Add, view, and delete local bookmarks.
-- [ ] Multi-color text selection highlights anchored to robust DOM selectors / EPUB CFIs.
-- [ ] Attach user notes and annotations to highlights.
-- [ ] Export annotations to standard JSON, Markdown, and HTML.
+- [x] Full-text search within the open publication with highlighted search hit navigation.
+- [x] Add, view, and delete local bookmarks.
+- [x] Multi-color text selection highlights anchored to robust DOM selectors / EPUB CFIs.
+- [x] Attach user notes and annotations to highlights.
+- [x] Export annotations to standard JSON, Markdown, and HTML.
 
-### Milestone 0.6: Japanese Typography & Accessibility
+### Milestone 0.6: Japanese Typography & Accessibility (Next Priority)
 
 - [ ] Native support for vertical text layout (`writing-mode: vertical-rl`) with vertical paging.
 - [ ] Correct positioning for ruby annotations (`<ruby>`, `<rt>`) in horizontal and vertical modes.
