@@ -1,5 +1,13 @@
 import type { ReaderSettings } from "@reflowpress/reader";
 import {
+  applyTcyAssist,
+  generateTypographyCss,
+  normalizeLegacyEpubCss,
+  resolveWritingMode,
+  type DocumentTypographyContext,
+  type JapaneseTypographySettings,
+} from "@reflowpress/typography";
+import {
   resolveResourceHref,
   type PublicationResourceManager,
 } from "./resource-manager.js";
@@ -35,6 +43,7 @@ export function sanitizeXhtml(
   sectionHref: string,
   resourceManager?: PublicationResourceManager,
   settings?: ReaderSettings,
+  context?: DocumentTypographyContext,
 ): string {
   if (!rawHtml) return "";
 
@@ -140,50 +149,54 @@ export function sanitizeXhtml(
     });
   }
 
-  // 4. Inject theme and typography styles if settings are provided
+  // 4. Normalize legacy EPUB CSS in all existing <style> tags
+  const existingStyles = doc.querySelectorAll("style");
+  existingStyles.forEach((styleEl) => {
+    if (styleEl.textContent) {
+      styleEl.textContent = normalizeLegacyEpubCss(styleEl.textContent);
+    }
+  });
+
+  // 5. Inject theme and typography styles if settings are provided
   if (settings) {
-    const { bg, color, link } = getThemeColors(settings.theme);
+    const writingModeSetting = settings.writingMode ?? "auto";
+    const resolvedWritingMode = resolveWritingMode(writingModeSetting, {
+      pageProgressionDirection: context?.pageProgressionDirection,
+      renditionDirection: context?.renditionDirection,
+      markupSnippet: rawHtml.slice(0, 3000),
+    });
+
+    const typographySettings: JapaneseTypographySettings = {
+      writingMode: writingModeSetting,
+      lineBreak: "strict",
+      tateChuYoko: settings.tateChuYoko ?? "author",
+      rubyPosition: "auto",
+    };
+
+    const typographyCss = generateTypographyCss(typographySettings, {
+      resolvedWritingMode,
+      fontFamily: settings.fontFamily,
+      fontSizePx: settings.fontSize,
+      lineHeight: settings.lineHeight,
+      marginPx: settings.margin,
+      theme: settings.theme,
+    });
+
+    const { link } = getThemeColors(settings.theme);
+
     const styleEl = doc.createElement("style");
     styleEl.setAttribute("id", "reflowpress-reader-theme");
     styleEl.textContent = `
-      :root {
-        --rf-bg: ${bg};
-        --rf-color: ${color};
-        --rf-link: ${link};
-        --rf-font-family: ${settings.fontFamily};
-        --rf-font-size: ${settings.fontSize}px;
-        --rf-line-height: ${settings.lineHeight};
-        --rf-margin: ${settings.margin}px;
-      }
-      html {
-        background-color: var(--rf-bg) !important;
-        color: var(--rf-color) !important;
-      }
-      body {
-        background-color: var(--rf-bg) !important;
-        color: var(--rf-color) !important;
-        font-family: var(--rf-font-family) !important;
-        font-size: var(--rf-font-size) !important;
-        line-height: var(--rf-line-height) !important;
-        padding-top: var(--rf-margin) !important;
-        padding-bottom: var(--rf-margin) !important;
-        padding-left: clamp(16px, var(--rf-margin), 96px) !important;
-        padding-right: clamp(16px, var(--rf-margin), 96px) !important;
-        max-width: 820px !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        box-sizing: border-box !important;
-        word-break: break-word !important;
-      }
-      a {
-        color: var(--rf-link) !important;
-      }
-      img, svg, video {
-        max-width: 100% !important;
-        height: auto !important;
-        box-sizing: border-box !important;
-      }
-    `;
+${typographyCss}
+a {
+  color: ${link} !important;
+}
+img, svg, video {
+  max-width: 100% !important;
+  height: auto !important;
+  box-sizing: border-box !important;
+}
+`;
 
     if (doc.head) {
       doc.head.appendChild(styleEl);
@@ -192,5 +205,20 @@ export function sanitizeXhtml(
     }
   }
 
-  return doc.documentElement ? doc.documentElement.outerHTML : rawHtml;
+  let finalHtml = doc.documentElement ? doc.documentElement.outerHTML : rawHtml;
+
+  // 6. Apply TCY assist if enabled and running in vertical mode
+  if (settings && settings.tateChuYoko === "assist") {
+    const writingModeSetting = settings.writingMode ?? "auto";
+    const resolvedWritingMode = resolveWritingMode(writingModeSetting, {
+      pageProgressionDirection: context?.pageProgressionDirection,
+      renditionDirection: context?.renditionDirection,
+      markupSnippet: rawHtml.slice(0, 3000),
+    });
+    if (resolvedWritingMode === "vertical-rl") {
+      finalHtml = applyTcyAssist(finalHtml, "assist");
+    }
+  }
+
+  return finalHtml;
 }

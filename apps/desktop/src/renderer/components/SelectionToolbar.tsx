@@ -93,6 +93,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
         type="button"
         onClick={() => onAddNote("yellow")}
         title="Add note to selection"
+        aria-label="Add note to selection"
         style={{
           border: "none",
           background: "transparent",
@@ -110,6 +111,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
         type="button"
         onClick={onDismiss}
         title="Dismiss toolbar"
+        aria-label="Dismiss toolbar"
         style={{
           border: "none",
           background: "transparent",

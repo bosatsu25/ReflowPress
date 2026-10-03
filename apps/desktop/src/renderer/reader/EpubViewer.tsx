@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import type { NormalizedPublication } from "@reflowpress/core";
 import type { ReaderSettings } from "@reflowpress/reader";
+import {
+  calculateProgressionDelta,
+  resolveReadingFlow,
+  resolveWritingMode,
+} from "@reflowpress/typography";
 import { PublicationResourceManager } from "./resource-manager.js";
 import { sanitizeXhtml } from "./sanitizer.js";
 
@@ -56,6 +61,21 @@ export const EpubViewer: React.FC<EpubViewerProps> = ({
   const totalSections = publication.readingOrder.length;
   const currentSection = publication.readingOrder[activeSectionIndex];
 
+  const writingModeSetting = settings.writingMode ?? "auto";
+  const resolvedWritingMode = useMemo(() => {
+    return resolveWritingMode(writingModeSetting, {
+      pageProgressionDirection:
+        publication.metadata.direction === "rtl" ? "rtl" : undefined,
+      renditionDirection:
+        publication.metadata.direction === "rtl" ? "rtl" : undefined,
+      markupSnippet: currentSection?.markup.slice(0, 3000),
+    });
+  }, [writingModeSetting, publication.metadata, currentSection?.markup]);
+
+  const flow = useMemo(() => {
+    return resolveReadingFlow(resolvedWritingMode);
+  }, [resolvedWritingMode]);
+
   // Sanitize section content and inject theme
   const sanitizedHtml = useMemo(() => {
     if (!currentSection) return "<p>No content in this section.</p>";
@@ -64,8 +84,15 @@ export const EpubViewer: React.FC<EpubViewerProps> = ({
       currentSection.href,
       resourceManager,
       settings,
+      {
+        pageProgressionDirection:
+          publication.metadata.direction === "rtl" ? "rtl" : undefined,
+        renditionDirection:
+          publication.metadata.direction === "rtl" ? "rtl" : undefined,
+        markupSnippet: currentSection.markup.slice(0, 3000),
+      },
     );
-  }, [currentSection, resourceManager, settings]);
+  }, [currentSection, resourceManager, settings, publication.metadata]);
 
   const goToNextSection = useCallback(() => {
     if (activeSectionIndex < totalSections - 1) {
@@ -86,6 +113,32 @@ export const EpubViewer: React.FC<EpubViewerProps> = ({
 
       const doc = iframe.contentDocument;
       const win = iframe.contentWindow;
+
+      if (flow.writingMode === "vertical-rl") {
+        const delta = calculateProgressionDelta(
+          flow,
+          direction === 1 ? "next" : "previous",
+          { width: win.innerWidth, height: win.innerHeight },
+        );
+
+        const currentLeft = win.scrollX;
+        // In vertical-rl, check if already at edge
+        const maxScrollLeft = doc.documentElement.scrollWidth - win.innerWidth;
+
+        if (
+          direction === 1 &&
+          (Math.abs(currentLeft) >= maxScrollLeft - 10 ||
+            currentLeft <= -maxScrollLeft + 10)
+        ) {
+          goToNextSection();
+        } else if (direction === -1 && Math.abs(currentLeft) <= 10) {
+          goToPreviousSection();
+        } else {
+          win.scrollBy({ left: delta.deltaX, top: 0, behavior: "smooth" });
+        }
+        return;
+      }
+
       const scrollY = win.scrollY;
       const maxScroll = Math.max(
         0,
@@ -109,7 +162,7 @@ export const EpubViewer: React.FC<EpubViewerProps> = ({
         }
       }
     },
-    [goToNextSection, goToPreviousSection],
+    [flow, goToNextSection, goToPreviousSection],
   );
 
   // Setup scroll listener and keyboard listeners inside iframe
@@ -306,7 +359,7 @@ export const EpubViewer: React.FC<EpubViewerProps> = ({
     >
       <iframe
         ref={iframeRef}
-        title="EPUB Content"
+        title={`Book content — ${currentSection?.id || publication.metadata.title}`}
         srcDoc={sanitizedHtml}
         sandbox="allow-same-origin"
         className="epub-viewport-frame"

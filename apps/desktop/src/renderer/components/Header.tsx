@@ -101,6 +101,8 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onToggleToc}
             disabled={!hasToc}
             aria-label="Table of Contents"
+            aria-expanded={tocOpen}
+            aria-controls="toc-drawer-panel"
             title={
               hasToc
                 ? tocOpen
@@ -136,6 +138,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={onToggleSearch}
             aria-label="Search In Book"
+            aria-keyshortcuts="Control+F"
             title="Search In Book (Ctrl+F)"
             style={{
               padding: "6px 10px",
@@ -160,6 +163,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={onQuickBookmark}
             aria-label="Quick Bookmark"
+            aria-keyshortcuts="Control+D"
             title="Bookmark Current Location (Ctrl+D)"
             style={{
               padding: "6px 10px",
@@ -184,6 +188,8 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={onToggleTools}
             aria-label="Reading Tools"
+            aria-expanded={toolsOpen}
+            aria-controls="reading-tools-drawer-panel"
             title="Reading Tools (Bookmarks, Highlights, Notes)"
             style={{
               padding: "6px 10px",
@@ -271,6 +277,7 @@ export const Header: React.FC<HeaderProps> = ({
           type="button"
           onClick={onOpenSettings}
           aria-label="Reader Settings"
+          aria-haspopup="dialog"
           title="Reading Settings"
           style={{
             padding: "6px 10px",
