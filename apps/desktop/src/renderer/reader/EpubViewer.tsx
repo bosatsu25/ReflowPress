@@ -4,13 +4,22 @@ import type { ReaderSettings } from "@reflowpress/reader";
 import { PublicationResourceManager } from "./resource-manager.js";
 import { sanitizeXhtml } from "./sanitizer.js";
 
+import type { HighlightAnnotation } from "@reflowpress/annotations";
+
 export interface EpubViewerProps {
   publication: NormalizedPublication;
   activeSectionIndex: number;
   settings: ReaderSettings;
   initialProgress?: number;
+  highlights?: HighlightAnnotation[];
+  searchTarget?: {
+    textQuote: { exact: string; prefix?: string; suffix?: string };
+  } | null;
   onSectionChange: (newIndex: number) => void;
   onProgressChange: (sectionIndex: number, progress: number) => void;
+  onSelectionChange?: (
+    selection: { text: string; prefix?: string; suffix?: string } | null,
+  ) => void;
 }
 
 export const EpubViewer: React.FC<EpubViewerProps> = ({
@@ -18,8 +27,11 @@ export const EpubViewer: React.FC<EpubViewerProps> = ({
   activeSectionIndex,
   settings,
   initialProgress = 0,
+  highlights = [],
+  searchTarget = null,
   onSectionChange,
   onProgressChange,
+  onSelectionChange,
 }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const resourceManagerRef = useRef<PublicationResourceManager | null>(null);
@@ -151,15 +163,141 @@ export const EpubViewer: React.FC<EpubViewerProps> = ({
         }
       };
 
+      const handleSelection = () => {
+        const selection = doc.getSelection();
+        if (!selection || selection.isCollapsed) {
+          onSelectionChange?.(null);
+          return;
+        }
+        const text = selection.toString().trim();
+        if (!text) {
+          onSelectionChange?.(null);
+          return;
+        }
+        onSelectionChange?.({ text });
+      };
+
       win.addEventListener("scroll", reportScroll, { passive: true });
       win.addEventListener("keydown", handleKeyDown);
+      doc.addEventListener("selectionchange", handleSelection);
+      doc.addEventListener("mouseup", handleSelection);
     };
 
     iframe.addEventListener("load", handleIframeLoad);
     return () => {
       iframe.removeEventListener("load", handleIframeLoad);
     };
-  }, [activeSectionIndex, initialProgress, handlePageStep, onProgressChange]);
+  }, [
+    activeSectionIndex,
+    initialProgress,
+    handlePageStep,
+    onProgressChange,
+    onSelectionChange,
+  ]);
+
+  // Decorate persistent highlights in rendered DOM
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !iframe.contentDocument || !currentSection) return;
+    const doc = iframe.contentDocument;
+
+    // Remove existing highlights
+    const oldMarks = doc.querySelectorAll("mark.reflowpress-highlight");
+    oldMarks.forEach((m) => {
+      const parent = m.parentNode;
+      if (parent) {
+        parent.replaceChild(doc.createTextNode(m.textContent || ""), m);
+        parent.normalize();
+      }
+    });
+
+    const sectionHighlights = highlights.filter(
+      (h) =>
+        h.locator.kind === "epub" &&
+        h.locator.sectionHref === currentSection.href,
+    );
+
+    const colorStyles: Record<string, string> = {
+      yellow:
+        "background-color: #fef08a; color: inherit; padding: 1px 2px; border-radius: 2px;",
+      green:
+        "background-color: #bbf7d0; color: inherit; padding: 1px 2px; border-radius: 2px;",
+      blue: "background-color: #bfdbfe; color: inherit; padding: 1px 2px; border-radius: 2px;",
+      pink: "background-color: #fbcfe8; color: inherit; padding: 1px 2px; border-radius: 2px;",
+    };
+
+    for (const h of sectionHighlights) {
+      const exact = h.textQuote.exact;
+      if (!exact) continue;
+
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+      let currentNode: Node | null = walker.nextNode();
+      while (currentNode) {
+        const nodeText = currentNode.nodeValue || "";
+        const idx = nodeText.indexOf(exact);
+        if (idx !== -1 && currentNode.parentNode) {
+          try {
+            const range = doc.createRange();
+            range.setStart(currentNode, idx);
+            range.setEnd(currentNode, idx + exact.length);
+            const mark = doc.createElement("mark");
+            mark.className = `reflowpress-highlight reflowpress-highlight-${h.color}`;
+            mark.setAttribute("data-annotation-id", h.id);
+            mark.style.cssText = colorStyles[h.color] || colorStyles.yellow!;
+            range.surroundContents(mark);
+          } catch {
+            // Ignore boundary cross errors
+          }
+          break;
+        }
+        currentNode = walker.nextNode();
+      }
+    }
+  }, [highlights, currentSection, sanitizedHtml]);
+
+  // Handle search target highlight and scroll
+  useEffect(() => {
+    if (!searchTarget) return;
+    const iframe = iframeRef.current;
+    if (!iframe || !iframe.contentDocument) return;
+    const doc = iframe.contentDocument;
+
+    const oldSearch = doc.querySelectorAll("mark.reflowpress-search-match");
+    oldSearch.forEach((m) => {
+      const parent = m.parentNode;
+      if (parent) {
+        parent.replaceChild(doc.createTextNode(m.textContent || ""), m);
+        parent.normalize();
+      }
+    });
+
+    const exact = searchTarget.textQuote.exact;
+    if (!exact) return;
+
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    let currentNode: Node | null = walker.nextNode();
+    while (currentNode) {
+      const nodeText = currentNode.nodeValue || "";
+      const idx = nodeText.toLowerCase().indexOf(exact.toLowerCase());
+      if (idx !== -1 && currentNode.parentNode) {
+        try {
+          const range = doc.createRange();
+          range.setStart(currentNode, idx);
+          range.setEnd(currentNode, idx + exact.length);
+          const mark = doc.createElement("mark");
+          mark.className = "reflowpress-search-match";
+          mark.style.cssText =
+            "background-color: #fde047; color: #000; padding: 2px 4px; border-radius: 3px; outline: 2px solid #ca8a04;";
+          range.surroundContents(mark);
+          mark.scrollIntoView({ behavior: "smooth", block: "center" });
+        } catch {
+          // Ignore range error
+        }
+        break;
+      }
+      currentNode = walker.nextNode();
+    }
+  }, [searchTarget, currentSection]);
 
   return (
     <div

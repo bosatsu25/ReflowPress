@@ -15,19 +15,28 @@ import {
   addBookToCollection,
   removeBookFromCollection,
 } from "@reflowpress/library";
+import type {
+  AnnotationStore,
+  PublicationIdentity,
+  ImportReport,
+} from "@reflowpress/annotations";
 import {
   showOpenFileNativeDialog,
   showOpenMultipleFilesNativeDialog,
   showOpenDirectoryNativeDialog,
+  showSaveFileDialog,
+  showOpenAnnotationFileDialog,
 } from "./file-dialog.js";
 import type { ReadingPositionStore } from "./reading-position-store.js";
 import type { JsonLibraryRepository } from "./library-repository.js";
+import type { JsonAnnotationRepository } from "./annotation-repository.js";
 import { scanLibraryPaths } from "./library-scanner.js";
 
 export function registerIpcHandlers(
   window: BrowserWindow,
   positionStore: ReadingPositionStore,
   libraryRepo: JsonLibraryRepository,
+  annotationRepo: JsonAnnotationRepository,
   coversDir: string,
   initialFilePath: string | null = null,
 ): void {
@@ -217,6 +226,67 @@ export function registerIpcHandlers(
       } catch {
         return null;
       }
+    },
+  );
+
+  ipcMain.handle("annotations:load", async (): Promise<AnnotationStore> => {
+    return annotationRepo.load();
+  });
+
+  ipcMain.handle(
+    "annotations:save",
+    async (_event, store: AnnotationStore): Promise<void> => {
+      await annotationRepo.save(store);
+    },
+  );
+
+  ipcMain.handle(
+    "annotations:export",
+    async (
+      _event,
+      publication: PublicationIdentity,
+      format: "json" | "markdown" | "html",
+      targetPath: string,
+      publicationId?: string,
+    ): Promise<void> => {
+      await annotationRepo.exportToFile(
+        publication,
+        format,
+        targetPath,
+        publicationId,
+      );
+    },
+  );
+
+  ipcMain.handle(
+    "annotations:import",
+    async (
+      _event,
+      sourcePath: string,
+      targetPublicationId: string,
+    ): Promise<ImportReport> => {
+      return annotationRepo.importFromFile(sourcePath, targetPublicationId);
+    },
+  );
+
+  ipcMain.handle(
+    "dialog:save-file",
+    async (
+      _event,
+      options: {
+        title: string;
+        defaultPath?: string;
+        filters: Array<{ name: string; extensions: string[] }>;
+      },
+    ): Promise<string | null> => {
+      return showSaveFileDialog(window, options);
+    },
+  );
+
+  ipcMain.handle(
+    "dialog:open-annotation-file",
+    async (): Promise<string | null> => {
+      return showOpenAnnotationFileDialog(window);
     },
   );
 }

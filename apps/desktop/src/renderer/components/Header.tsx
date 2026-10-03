@@ -8,8 +8,12 @@ export interface HeaderProps {
   tocOpen: boolean;
   theme: ReaderSettings["theme"];
   viewMode?: "library" | "reader";
+  toolsOpen?: boolean;
   onOpenFile: () => void;
   onToggleToc: () => void;
+  onToggleTools?: () => void;
+  onToggleSearch?: () => void;
+  onQuickBookmark?: () => void;
   onOpenSettings: () => void;
   onCloseDocument: () => void;
   onSwitchToLibrary?: () => void;
@@ -23,8 +27,12 @@ export const Header: React.FC<HeaderProps> = ({
   tocOpen,
   theme,
   viewMode = "reader",
+  toolsOpen = false,
   onOpenFile,
   onToggleToc,
+  onToggleTools,
+  onToggleSearch,
+  onQuickBookmark,
   onOpenSettings,
   onCloseDocument,
   onSwitchToLibrary,
@@ -120,6 +128,82 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <span>☰</span>
             <span>TOC</span>
+          </button>
+        )}
+
+        {viewMode === "reader" && hasDocument && onToggleSearch && (
+          <button
+            type="button"
+            onClick={onToggleSearch}
+            aria-label="Search In Book"
+            title="Search In Book (Ctrl+F)"
+            style={{
+              padding: "6px 10px",
+              cursor: "pointer",
+              border: `1px solid ${borderColor}`,
+              borderRadius: "4px",
+              background: "transparent",
+              color: textColor,
+              fontSize: "13px",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <span>🔍</span>
+            <span>Search</span>
+          </button>
+        )}
+
+        {viewMode === "reader" && hasDocument && onQuickBookmark && (
+          <button
+            type="button"
+            onClick={onQuickBookmark}
+            aria-label="Quick Bookmark"
+            title="Bookmark Current Location (Ctrl+D)"
+            style={{
+              padding: "6px 10px",
+              cursor: "pointer",
+              border: `1px solid ${borderColor}`,
+              borderRadius: "4px",
+              background: "transparent",
+              color: textColor,
+              fontSize: "13px",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <span>🔖</span>
+            <span>Bookmark</span>
+          </button>
+        )}
+
+        {viewMode === "reader" && hasDocument && onToggleTools && (
+          <button
+            type="button"
+            onClick={onToggleTools}
+            aria-label="Reading Tools"
+            title="Reading Tools (Bookmarks, Highlights, Notes)"
+            style={{
+              padding: "6px 10px",
+              cursor: "pointer",
+              border: `1px solid ${borderColor}`,
+              borderRadius: "4px",
+              background: toolsOpen
+                ? isDark
+                  ? "#374151"
+                  : "#e5e7eb"
+                : "transparent",
+              color: textColor,
+              fontSize: "13px",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <span>🛠</span>
+            <span>Tools</span>
           </button>
         )}
 

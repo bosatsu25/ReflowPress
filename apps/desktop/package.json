@@ -12,10 +12,12 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@reflowpress/annotations": "workspace:*",
     "@reflowpress/core": "workspace:*",
     "@reflowpress/epub": "workspace:*",
     "@reflowpress/library": "workspace:*",
     "@reflowpress/reader": "workspace:*",
+    "@reflowpress/search": "workspace:*",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

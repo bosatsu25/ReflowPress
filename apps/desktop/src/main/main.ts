@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { registerIpcHandlers } from "./ipc.js";
 import { ReadingPositionStore } from "./reading-position-store.js";
 import { JsonLibraryRepository } from "./library-repository.js";
+import { JsonAnnotationRepository } from "./annotation-repository.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,6 +13,10 @@ let mainWindow: BrowserWindow | null = null;
 
 function parseInitialFileArgument(): string | null {
   const args = process.argv;
+  const openEqual = args.find((a) => a.startsWith("--open="));
+  if (openEqual) {
+    return path.resolve(openEqual.slice(7));
+  }
   const openIndex = args.indexOf("--open");
   if (openIndex !== -1 && args[openIndex + 1]) {
     return path.resolve(args[openIndex + 1]!);
@@ -60,6 +65,13 @@ async function createWindow(): Promise<BrowserWindow> {
     "library-v1.json",
   );
   const libraryRepo = new JsonLibraryRepository(libraryStorePath);
+
+  const annotationStorePath = path.join(
+    app.getPath("userData"),
+    "annotations-v1.json",
+  );
+  const annotationRepo = new JsonAnnotationRepository(annotationStorePath);
+
   const coversDir = path.join(
     app.getPath("userData"),
     "library-cache",
@@ -71,6 +83,7 @@ async function createWindow(): Promise<BrowserWindow> {
     window,
     positionStore,
     libraryRepo,
+    annotationRepo,
     coversDir,
     initialFile,
   );

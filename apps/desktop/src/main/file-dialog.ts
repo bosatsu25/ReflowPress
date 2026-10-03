@@ -56,3 +56,51 @@ export async function showOpenDirectoryNativeDialog(
 
   return result.filePaths[0] ?? null;
 }
+
+export async function showSaveFileDialog(
+  window: BrowserWindow,
+  options: {
+    title: string;
+    defaultPath?: string | undefined;
+    filters: Array<{ name: string; extensions: string[] }>;
+  },
+): Promise<string | null> {
+  const dialogOpts: {
+    title: string;
+    defaultPath?: string;
+    filters: Array<{ name: string; extensions: string[] }>;
+  } = {
+    title: options.title,
+    filters: options.filters,
+  };
+  if (options.defaultPath !== undefined) {
+    dialogOpts.defaultPath = options.defaultPath;
+  }
+
+  const result = await dialog.showSaveDialog(window, dialogOpts);
+
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+
+  return result.filePath;
+}
+
+export async function showOpenAnnotationFileDialog(
+  window: BrowserWindow,
+): Promise<string | null> {
+  const result = await dialog.showOpenDialog(window, {
+    title: "Import Annotations",
+    properties: ["openFile"],
+    filters: [
+      { name: "ReflowPress Annotations (*.json)", extensions: ["json"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  return result.filePaths[0] ?? null;
+}

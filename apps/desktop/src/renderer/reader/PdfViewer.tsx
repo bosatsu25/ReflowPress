@@ -15,13 +15,20 @@ if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
   }
 }
 
+import type { HighlightAnnotation } from "@reflowpress/annotations";
+
 export interface PdfViewerProps {
   pdfBytes: Uint8Array;
   currentPage: number;
   zoom: number;
   settings: ReaderSettings;
+  highlights?: HighlightAnnotation[];
   onPageChange: (newPage: number, totalPages: number) => void;
   onZoomChange: (newZoom: number) => void;
+  onPagesExtracted?: (pages: Array<{ page: number; text: string }>) => void;
+  onSelectionChange?: (
+    selection: { text: string; page: number } | null,
+  ) => void;
 }
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({
@@ -29,9 +36,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   currentPage,
   zoom,
   settings,
+  highlights = [],
   onPageChange,
   onZoomChange,
+  onPagesExtracted,
+  onSelectionChange,
 }) => {
+  void highlights;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
@@ -67,6 +78,64 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       loadTask.destroy().catch(() => {});
     };
   }, [pdfBytes]);
+
+  // Extract text across all pages for in-book search and tools
+  useEffect(() => {
+    if (!pdfDoc || !onPagesExtracted) return;
+    let isCancelled = false;
+
+    const extractPages = async () => {
+      const extracted: Array<{ page: number; text: string }> = [];
+      for (let i = 1; i <= pdfDoc.numPages; i++) {
+        if (isCancelled) break;
+        try {
+          const page = await pdfDoc.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items
+            .map((item) => ("str" in item ? item.str : ""))
+            .join(" ");
+          extracted.push({ page: i, text: pageText });
+        } catch {
+          // Continue best effort
+        }
+      }
+      if (!isCancelled) {
+        onPagesExtracted(extracted);
+      }
+    };
+
+    extractPages();
+    return () => {
+      isCancelled = true;
+    };
+  }, [pdfDoc, onPagesExtracted]);
+
+  // Handle text selection in PDF container
+  useEffect(() => {
+    if (!onSelectionChange) return;
+
+    const handleMouseUp = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) {
+        onSelectionChange(null);
+        return;
+      }
+      const text = selection.toString().trim();
+      if (!text) {
+        onSelectionChange(null);
+        return;
+      }
+      onSelectionChange({ text, page: currentPage });
+    };
+
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener("mouseup", handleMouseUp);
+      return () => {
+        container.removeEventListener("mouseup", handleMouseUp);
+      };
+    }
+  }, [currentPage, onSelectionChange]);
 
   // Render current page onto canvas
   useEffect(() => {

@@ -104,4 +104,27 @@ export const desktopBridge: DesktopBridge = {
   readCoverImage(coverPath: string): Promise<string | null> {
     return getBridge().readCoverImage(coverPath);
   },
+  loadAnnotations() {
+    return getBridge().loadAnnotations();
+  },
+  saveAnnotations(store) {
+    return getBridge().saveAnnotations(store);
+  },
+  exportAnnotations(publication, format, targetPath, publicationId) {
+    return getBridge().exportAnnotations(
+      publication,
+      format,
+      targetPath,
+      publicationId,
+    );
+  },
+  importAnnotations(sourcePath, targetPublicationId) {
+    return getBridge().importAnnotations(sourcePath, targetPublicationId);
+  },
+  showSaveFileDialog(options) {
+    return getBridge().showSaveFileDialog(options);
+  },
+  showOpenAnnotationFileDialog() {
+    return getBridge().showOpenAnnotationFileDialog();
+  },
 };

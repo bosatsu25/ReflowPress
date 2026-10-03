@@ -5,6 +5,11 @@ import type {
   LibraryCatalog,
   ScanResult,
 } from "@reflowpress/library";
+import type {
+  AnnotationStore,
+  PublicationIdentity,
+  ImportReport,
+} from "@reflowpress/annotations";
 
 export interface LoadedPublicationResult {
   readonly kind: "epub" | "pdf";
@@ -51,6 +56,25 @@ export interface DesktopBridge {
     collectionId: string,
   ): Promise<LibraryCatalog>;
   readCoverImage(coverPath: string): Promise<string | null>;
+  // Annotations API
+  loadAnnotations(): Promise<AnnotationStore>;
+  saveAnnotations(store: AnnotationStore): Promise<void>;
+  exportAnnotations(
+    publication: PublicationIdentity,
+    format: "json" | "markdown" | "html",
+    targetPath: string,
+    publicationId?: string,
+  ): Promise<void>;
+  importAnnotations(
+    sourcePath: string,
+    targetPublicationId: string,
+  ): Promise<ImportReport>;
+  showSaveFileDialog(options: {
+    title: string;
+    defaultPath?: string;
+    filters: Array<{ name: string; extensions: string[] }>;
+  }): Promise<string | null>;
+  showOpenAnnotationFileDialog(): Promise<string | null>;
 }
 
 declare global {

@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import type { NormalizedPublication } from "@reflowpress/core";
 import {
   type ReaderSettings,
@@ -13,6 +19,23 @@ import {
   type LibraryBook,
   createDefaultCatalog,
 } from "@reflowpress/library";
+import {
+  type AnnotationColor,
+  type AnnotationStore,
+  type HighlightAnnotation,
+  type PublicationLocator,
+  type PublicationIdentity,
+  createDefaultAnnotationStore,
+  createBookmark,
+  createHighlight,
+  createNote,
+} from "@reflowpress/annotations";
+import {
+  type SearchProgress,
+  type SearchResult,
+  searchEpubSections,
+  searchPdfPages,
+} from "@reflowpress/search";
 import { desktopBridge } from "./adapter/desktop-bridge.js";
 import { Header } from "./components/Header.js";
 import { Footer } from "./components/Footer.js";
@@ -21,6 +44,8 @@ import { SettingsModal } from "./components/SettingsModal.js";
 import { EmptyState } from "./components/EmptyState.js";
 import { ErrorBanner } from "./components/ErrorBanner.js";
 import { LibraryView } from "./components/LibraryView.js";
+import { ReadingToolsDrawer } from "./components/ReadingToolsDrawer.js";
+import { SelectionToolbar } from "./components/SelectionToolbar.js";
 import { EpubViewer } from "./reader/EpubViewer.js";
 import { PdfViewer } from "./reader/PdfViewer.js";
 
@@ -50,6 +75,11 @@ export const App: React.FC = () => {
   // Library Catalog state
   const [catalog, setCatalog] = useState<LibraryCatalog>(createDefaultCatalog);
 
+  // Annotations state
+  const [annotationStore, setAnnotationStore] = useState<AnnotationStore>(
+    createDefaultAnnotationStore,
+  );
+
   // Active document state
   const [documentKind, setDocumentKind] = useState<"epub" | "pdf" | null>(null);
   const [publicationId, setPublicationId] = useState<string>("");
@@ -67,22 +97,86 @@ export const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [pdfZoom, setPdfZoom] = useState<number>(DEFAULT_PDF_ZOOM);
+  const [pdfPagesText, setPdfPagesText] = useState<
+    Array<{ page: number; text: string }>
+  >([]);
 
   // UI state
   const [tocOpen, setTocOpen] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [toolsDrawerOpen, setToolsDrawerOpen] = useState<boolean>(false);
+  const [activeToolsTab, setActiveToolsTab] = useState<
+    "search" | "bookmarks" | "highlights" | "notes"
+  >("search");
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [searchProgress, setSearchProgress] = useState<
+    SearchProgress | undefined
+  >(undefined);
+  const [searchTarget, setSearchTarget] = useState<{
+    textQuote: { exact: string; prefix?: string; suffix?: string };
+  } | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+
+  // Text Selection state
+  const [currentSelection, setCurrentSelection] = useState<{
+    text: string;
+    prefix?: string | undefined;
+    suffix?: string | undefined;
+    page?: number | undefined;
+  } | null>(null);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load library catalog on mount
+  // Load library catalog and annotations on mount
   useEffect(() => {
     desktopBridge
       .loadLibrary()
-      .then((cat) => {
-        setCatalog(cat);
-      })
+      .then((cat) => setCatalog(cat))
+      .catch(() => {});
+
+    desktopBridge
+      .loadAnnotations()
+      .then((store) => setAnnotationStore(store))
       .catch(() => {});
   }, []);
+
+  // Save annotation store helper
+  const handleSaveAnnotationStore = useCallback(
+    async (newStore: AnnotationStore) => {
+      setAnnotationStore(newStore);
+      await desktopBridge.saveAnnotations(newStore);
+    },
+    [],
+  );
+
+  // Current reading locator
+  const currentLocator = useMemo<PublicationLocator>(() => {
+    if (documentKind === "pdf") {
+      return {
+        kind: "pdf",
+        page: currentPage,
+        zoom: pdfZoom,
+      };
+    }
+    const currentHref =
+      epubPublication?.readingOrder[activeSectionIndex]?.href || "";
+    return {
+      kind: "epub",
+      sectionHref: currentHref,
+      progress: Math.round(sectionProgress * 1000) / 1000,
+    };
+  }, [
+    documentKind,
+    currentPage,
+    pdfZoom,
+    epubPublication,
+    activeSectionIndex,
+    sectionProgress,
+  ]);
 
   // Persist settings changes
   const handleUpdateSettings = (newSettings: ReaderSettings) => {
@@ -100,9 +194,281 @@ export const App: React.FC = () => {
     setDocumentTitle("");
     setEpubPublication(null);
     setPdfBytes(null);
+    setPdfPagesText([]);
     setTocOpen(false);
+    setToolsDrawerOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchTarget(null);
+    setCurrentSelection(null);
     setViewMode("library");
   }, []);
+
+  // Full-text in-book search effect
+  useEffect(() => {
+    if (searchAbortRef.current) {
+      searchAbortRef.current.abort();
+    }
+
+    const q = searchQuery.trim();
+    if (!q || !publicationId) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    const abortController = new AbortController();
+    searchAbortRef.current = abortController;
+    setIsSearching(true);
+
+    const timer = setTimeout(() => {
+      try {
+        if (documentKind === "epub" && epubPublication) {
+          const sections = epubPublication.readingOrder.map((s) => ({
+            href: s.href,
+            title: s.title,
+            content: s.markup,
+          }));
+          const results = searchEpubSections(
+            publicationId,
+            sections,
+            q,
+            undefined,
+            setSearchProgress,
+            abortController.signal,
+          );
+          if (!abortController.signal.aborted) {
+            setSearchResults(results);
+          }
+        } else if (documentKind === "pdf" && pdfPagesText.length > 0) {
+          const results = searchPdfPages(
+            publicationId,
+            pdfPagesText,
+            q,
+            undefined,
+            setSearchProgress,
+            abortController.signal,
+          );
+          if (!abortController.signal.aborted) {
+            setSearchResults(results);
+          }
+        }
+      } finally {
+        if (!abortController.signal.aborted) {
+          setIsSearching(false);
+        }
+      }
+    }, 120);
+
+    return () => {
+      clearTimeout(timer);
+      abortController.abort();
+    };
+  }, [searchQuery, publicationId, documentKind, epubPublication, pdfPagesText]);
+
+  // Jump to any publication locator (search result, bookmark, highlight, note)
+  const handleJumpToLocator = useCallback(
+    (loc: PublicationLocator) => {
+      if (loc.kind === "epub") {
+        if (epubPublication) {
+          const found = findSectionIndexByHref(
+            epubPublication.readingOrder,
+            loc.sectionHref,
+          );
+          if (found >= 0) {
+            setActiveSectionIndex(found);
+            if (loc.progress !== undefined) {
+              setInitialProgress(loc.progress);
+            }
+            if (loc.textQuote) {
+              setSearchTarget({ textQuote: loc.textQuote });
+            }
+          }
+        }
+      } else if (loc.kind === "pdf") {
+        setCurrentPage(loc.page);
+      }
+    },
+    [epubPublication],
+  );
+
+  // Quick bookmark current location
+  const handleQuickBookmark = useCallback(async () => {
+    if (!publicationId) return;
+    const { store: updated, isDuplicate } = createBookmark(annotationStore, {
+      publicationId,
+      locator: currentLocator,
+    });
+    if (!isDuplicate) {
+      await handleSaveAnnotationStore(updated);
+    }
+    setActiveToolsTab("bookmarks");
+    setToolsDrawerOpen(true);
+    setTocOpen(false);
+  }, [
+    publicationId,
+    currentLocator,
+    annotationStore,
+    handleSaveAnnotationStore,
+  ]);
+
+  // Highlight creation from selection
+  const handleCreateHighlight = useCallback(
+    async (color: AnnotationColor) => {
+      if (!currentSelection || !publicationId) return;
+      const loc: PublicationLocator =
+        documentKind === "pdf"
+          ? {
+              kind: "pdf",
+              page: currentSelection.page || currentPage,
+              textQuote: { exact: currentSelection.text },
+            }
+          : {
+              kind: "epub",
+              sectionHref:
+                epubPublication?.readingOrder[activeSectionIndex]?.href || "",
+              progress: sectionProgress,
+              textQuote: {
+                exact: currentSelection.text,
+                prefix: currentSelection.prefix,
+                suffix: currentSelection.suffix,
+              },
+            };
+
+      const { store: updated } = createHighlight(annotationStore, {
+        publicationId,
+        locator: loc,
+        color,
+        textQuote: {
+          exact: currentSelection.text,
+          prefix: currentSelection.prefix,
+          suffix: currentSelection.suffix,
+        },
+      });
+
+      await handleSaveAnnotationStore(updated);
+      setCurrentSelection(null);
+    },
+    [
+      currentSelection,
+      publicationId,
+      documentKind,
+      currentPage,
+      epubPublication,
+      activeSectionIndex,
+      sectionProgress,
+      annotationStore,
+      handleSaveAnnotationStore,
+    ],
+  );
+
+  // Add Note from selection
+  const handleAddNoteFromSelection = useCallback(
+    async (color: AnnotationColor) => {
+      if (!currentSelection || !publicationId) return;
+      const loc: PublicationLocator =
+        documentKind === "pdf"
+          ? {
+              kind: "pdf",
+              page: currentSelection.page || currentPage,
+              textQuote: { exact: currentSelection.text },
+            }
+          : {
+              kind: "epub",
+              sectionHref:
+                epubPublication?.readingOrder[activeSectionIndex]?.href || "",
+              progress: sectionProgress,
+              textQuote: {
+                exact: currentSelection.text,
+                prefix: currentSelection.prefix,
+                suffix: currentSelection.suffix,
+              },
+            };
+
+      const { store: withHighlight, highlight } = createHighlight(
+        annotationStore,
+        {
+          publicationId,
+          locator: loc,
+          color,
+          textQuote: {
+            exact: currentSelection.text,
+            prefix: currentSelection.prefix,
+            suffix: currentSelection.suffix,
+          },
+        },
+      );
+
+      const noteText = window.prompt("Enter note for this text:", "");
+      if (noteText && noteText.trim()) {
+        const { store: withNote } = createNote(withHighlight, {
+          publicationId,
+          locator: loc,
+          body: noteText.trim(),
+          highlightId: highlight.id,
+        });
+        await handleSaveAnnotationStore(withNote);
+      } else {
+        await handleSaveAnnotationStore(withHighlight);
+      }
+      setCurrentSelection(null);
+    },
+    [
+      currentSelection,
+      publicationId,
+      documentKind,
+      currentPage,
+      epubPublication,
+      activeSectionIndex,
+      sectionProgress,
+      annotationStore,
+      handleSaveAnnotationStore,
+    ],
+  );
+
+  // Export annotations handler
+  const handleExportAnnotations = useCallback(
+    async (format: "json" | "markdown" | "html") => {
+      const pubIdentity: PublicationIdentity = {
+        identifier: publicationId,
+        title: documentTitle,
+        format: (documentKind || "epub") as "epub" | "pdf",
+      };
+      const ext =
+        format === "json" ? "json" : format === "markdown" ? "md" : "html";
+      const cleanTitle = documentTitle.replace(
+        /[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g,
+        "_",
+      );
+      const defaultName = `${cleanTitle}-annotations.${ext}`;
+
+      const targetPath = await desktopBridge.showSaveFileDialog({
+        title: `Export Annotations (${format.toUpperCase()})`,
+        defaultPath: defaultName,
+        filters: [{ name: format.toUpperCase(), extensions: [ext] }],
+      });
+
+      if (targetPath) {
+        await desktopBridge.exportAnnotations(
+          pubIdentity,
+          format,
+          targetPath,
+          publicationId,
+        );
+      }
+    },
+    [publicationId, documentTitle, documentKind],
+  );
+
+  // Import annotations handler
+  const handleImportAnnotations = useCallback(async () => {
+    const sourcePath = await desktopBridge.showOpenAnnotationFileDialog();
+    if (sourcePath) {
+      await desktopBridge.importAnnotations(sourcePath, publicationId);
+      const reloaded = await desktopBridge.loadAnnotations();
+      setAnnotationStore(reloaded);
+    }
+  }, [publicationId]);
 
   const loadFile = useCallback(
     async (filePath: string) => {
@@ -144,6 +510,7 @@ export const App: React.FC = () => {
           setInitialProgress(restoredProgress);
           setSectionProgress(restoredProgress);
           setPdfBytes(null);
+          setPdfPagesText([]);
           setViewMode("reader");
         } else if (res.kind === "pdf") {
           setDocumentKind("pdf");
@@ -333,7 +700,21 @@ export const App: React.FC = () => {
     [],
   );
 
-  // Listen for initial file argument passed from main process (e.g. CLI or test)
+  const handleTocSelectHref = useCallback(
+    (href: string) => {
+      if (!epubPublication) return;
+      const index = findSectionIndexByHref(epubPublication.readingOrder, href);
+      if (index >= 0) {
+        setActiveSectionIndex(index);
+        setSectionProgress(0);
+        setInitialProgress(0);
+        setTocOpen(false);
+      }
+    },
+    [epubPublication],
+  );
+
+  // Handle initial file argument if passed from main process
   useEffect(() => {
     let isCancelled = false;
     desktopBridge
@@ -354,17 +735,33 @@ export const App: React.FC = () => {
     };
   }, [loadFile]);
 
-  // Global keyboard shortcuts (Ctrl+O, Esc)
+  // Global keyboard shortcuts (Ctrl+O, Ctrl+F, Ctrl+D, Esc)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") {
         e.preventDefault();
         handleOpenFile();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        if (viewMode === "reader" && documentKind !== null) {
+          setActiveToolsTab("search");
+          setToolsDrawerOpen(true);
+          setTocOpen(false);
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        if (viewMode === "reader" && documentKind !== null) {
+          handleQuickBookmark();
+        }
       } else if (e.key === "Escape") {
         if (settingsOpen) {
           setSettingsOpen(false);
+        } else if (toolsDrawerOpen) {
+          setToolsDrawerOpen(false);
         } else if (tocOpen) {
           setTocOpen(false);
+        } else if (currentSelection) {
+          setCurrentSelection(null);
         } else if (viewMode === "reader") {
           setViewMode("library");
         }
@@ -375,7 +772,16 @@ export const App: React.FC = () => {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleOpenFile, settingsOpen, tocOpen, viewMode]);
+  }, [
+    handleOpenFile,
+    handleQuickBookmark,
+    settingsOpen,
+    toolsDrawerOpen,
+    tocOpen,
+    currentSelection,
+    viewMode,
+    documentKind,
+  ]);
 
   // Debounced save position for EPUB
   const handleEpubProgressChange = useCallback(
@@ -413,6 +819,7 @@ export const App: React.FC = () => {
       setActiveSectionIndex(newIndex);
       setSectionProgress(0);
       setInitialProgress(0);
+      setSearchTarget(null);
 
       if (!epubPublication || !publicationId) return;
       const sec = epubPublication.readingOrder[newIndex];
@@ -454,30 +861,19 @@ export const App: React.FC = () => {
     [publicationId, pdfZoom],
   );
 
-  const handleTocSelectHref = (href: string) => {
-    if (!epubPublication) return;
-    const targetIdx = findSectionIndexByHref(
-      epubPublication.readingOrder,
-      href,
-    );
-    if (targetIdx >= 0) {
-      handleEpubSectionChange(targetIdx);
-    }
-  };
-
-  // Keyboard navigation for reader
+  // Arrow / Page Navigation for desktop window
   useEffect(() => {
-    if (viewMode !== "reader") return;
-
     const handleNavKeys = (e: KeyboardEvent) => {
+      if (viewMode !== "reader") return;
       if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        document.activeElement?.tagName === "INPUT" ||
+        document.activeElement?.tagName === "SELECT" ||
+        document.activeElement?.tagName === "TEXTAREA"
       ) {
         return;
       }
 
-      if (e.key === "ArrowLeft" || e.key === "PageUp") {
+      if (e.key === "ArrowLeft") {
         e.preventDefault();
         if (documentKind === "epub") {
           if (activeSectionIndex > 0) {
@@ -488,11 +884,7 @@ export const App: React.FC = () => {
             handlePdfPageChange(currentPage - 1, totalPages);
           }
         }
-      } else if (
-        e.key === "ArrowRight" ||
-        e.key === "PageDown" ||
-        e.key === " "
-      ) {
+      } else if (e.key === "ArrowRight") {
         e.preventDefault();
         if (documentKind === "epub") {
           if (
@@ -559,6 +951,15 @@ export const App: React.FC = () => {
   const isSepia = settings.theme === "sepia";
   const appBg = isDark ? "#121212" : isSepia ? "#fbf0d9" : "#f9fafb";
 
+  const pubHighlights = useMemo(
+    () =>
+      annotationStore.annotations.filter(
+        (a): a is HighlightAnnotation =>
+          a.publicationId === publicationId && a.kind === "highlight",
+      ),
+    [annotationStore, publicationId],
+  );
+
   return (
     <div
       className={`reader-shell theme-${settings.theme}`}
@@ -586,10 +987,24 @@ export const App: React.FC = () => {
           )
         }
         tocOpen={tocOpen}
+        toolsOpen={toolsDrawerOpen}
         theme={settings.theme}
         viewMode={viewMode}
         onOpenFile={handleOpenFile}
-        onToggleToc={() => setTocOpen(!tocOpen)}
+        onToggleToc={() => {
+          setTocOpen(!tocOpen);
+          if (!tocOpen) setToolsDrawerOpen(false);
+        }}
+        onToggleTools={() => {
+          setToolsDrawerOpen(!toolsDrawerOpen);
+          if (!toolsDrawerOpen) setTocOpen(false);
+        }}
+        onToggleSearch={() => {
+          setActiveToolsTab("search");
+          setToolsDrawerOpen(true);
+          setTocOpen(false);
+        }}
+        onQuickBookmark={handleQuickBookmark}
         onOpenSettings={() => setSettingsOpen(true)}
         onCloseDocument={handleCloseDocument}
         onSwitchToLibrary={() => setViewMode("library")}
@@ -662,8 +1077,11 @@ export const App: React.FC = () => {
             activeSectionIndex={activeSectionIndex}
             initialProgress={initialProgress}
             settings={settings}
+            highlights={pubHighlights}
+            searchTarget={searchTarget}
             onProgressChange={handleEpubProgressChange}
-            onNavigateSection={handleEpubSectionChange}
+            onSectionChange={handleEpubSectionChange}
+            onSelectionChange={(sel) => setCurrentSelection(sel)}
           />
         ) : documentKind === "pdf" && pdfBytes ? (
           <PdfViewer
@@ -671,12 +1089,29 @@ export const App: React.FC = () => {
             currentPage={currentPage}
             zoom={pdfZoom}
             settings={settings}
+            highlights={pubHighlights}
             onPageChange={handlePdfPageChange}
             onZoomChange={(newZoom) => setPdfZoom(newZoom)}
+            onPagesExtracted={(pages) => setPdfPagesText(pages)}
+            onSelectionChange={(sel) =>
+              setCurrentSelection(
+                sel ? { text: sel.text, page: sel.page } : null,
+              )
+            }
           />
         ) : (
           <EmptyState theme={settings.theme} onOpenFile={handleOpenFile} />
         )}
+
+        {/* Floating Context Toolbar for Text Selection */}
+        <SelectionToolbar
+          visible={currentSelection !== null}
+          selectedText={currentSelection?.text || ""}
+          theme={settings.theme}
+          onHighlight={handleCreateHighlight}
+          onAddNote={handleAddNoteFromSelection}
+          onDismiss={() => setCurrentSelection(null)}
+        />
 
         {/* TOC Drawer */}
         {viewMode === "reader" &&
@@ -693,6 +1128,31 @@ export const App: React.FC = () => {
               onSelectHref={handleTocSelectHref}
             />
           )}
+
+        {/* Reading Tools Drawer (Search, Bookmarks, Highlights, Notes, Export/Import) */}
+        {viewMode === "reader" && documentKind !== null && (
+          <ReadingToolsDrawer
+            isOpen={toolsDrawerOpen}
+            activeTab={activeToolsTab}
+            onTabChange={setActiveToolsTab}
+            onClose={() => setToolsDrawerOpen(false)}
+            theme={settings.theme}
+            publicationId={publicationId}
+            publicationTitle={documentTitle}
+            publicationFormat={documentKind}
+            store={annotationStore}
+            onSaveStore={handleSaveAnnotationStore}
+            currentLocator={currentLocator}
+            onJumpToLocator={handleJumpToLocator}
+            searchResults={searchResults}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            isSearching={isSearching}
+            searchProgress={searchProgress}
+            onExport={handleExportAnnotations}
+            onImport={handleImportAnnotations}
+          />
+        )}
       </main>
 
       {viewMode === "reader" && documentKind !== null && (
