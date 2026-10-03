@@ -63,7 +63,17 @@ export interface PdfDocument {
 }
 
 export interface RenderOptions {
-  readonly pageSize?: "A4" | "Letter";
+  readonly pageSize?: "A4" | "A5" | "B5" | "Letter";
+  readonly margin?:
+    | string
+    | {
+        readonly top?: string;
+        readonly right?: string;
+        readonly bottom?: string;
+        readonly left?: string;
+      };
+  readonly writingMode?: "auto" | "horizontal-tb" | "vertical-rl";
+  readonly landscape?: boolean;
 }
 
 /** Converts normalized publication content into PDF bytes. */
