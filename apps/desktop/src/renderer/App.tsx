@@ -36,6 +36,7 @@ import {
   searchEpubSections,
   searchPdfPages,
 } from "@reflowpress/search";
+import { resolveWritingMode } from "@reflowpress/typography";
 import { desktopBridge } from "./adapter/desktop-bridge.js";
 import { Header } from "./components/Header.js";
 import { Footer } from "./components/Footer.js";
@@ -128,6 +129,12 @@ export const App: React.FC = () => {
     suffix?: string | undefined;
     page?: number | undefined;
   } | null>(null);
+
+  // Screen reader polite live status announcer
+  const [srAnnouncement, setSrAnnouncement] = useState<string>("");
+  const announce = useCallback((message: string) => {
+    setSrAnnouncement(message);
+  }, []);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -825,6 +832,10 @@ export const App: React.FC = () => {
       const sec = epubPublication.readingOrder[newIndex];
       if (!sec) return;
 
+      announce(
+        `Section ${newIndex + 1} of ${epubPublication.readingOrder.length}: ${sec.title || sec.id}`,
+      );
+
       const pos: SavedReadingPosition = {
         publicationId,
         location: {
@@ -837,7 +848,7 @@ export const App: React.FC = () => {
       };
       desktopBridge.saveReadingPosition(pos).catch(() => {});
     },
-    [epubPublication, publicationId],
+    [epubPublication, publicationId, announce],
   );
 
   // Save position for PDF
@@ -845,6 +856,8 @@ export const App: React.FC = () => {
     (page: number, total: number) => {
       setCurrentPage(page);
       setTotalPages(total);
+
+      announce(`Page ${page} of ${total}`);
 
       if (!publicationId) return;
       const pos: SavedReadingPosition = {
@@ -858,33 +871,47 @@ export const App: React.FC = () => {
       };
       desktopBridge.saveReadingPosition(pos).catch(() => {});
     },
-    [publicationId, pdfZoom],
+    [publicationId, pdfZoom, announce],
   );
 
-  // Arrow / Page Navigation for desktop window
+  const writingModeSetting = settings.writingMode ?? "auto";
+  const resolvedWritingMode = useMemo(() => {
+    return resolveWritingMode(writingModeSetting, {
+      pageProgressionDirection:
+        epubPublication?.metadata.direction === "rtl" ? "rtl" : undefined,
+      renditionDirection:
+        epubPublication?.metadata.direction === "rtl" ? "rtl" : undefined,
+      markupSnippet: epubPublication?.readingOrder[
+        activeSectionIndex
+      ]?.markup.slice(0, 3000),
+    });
+  }, [writingModeSetting, epubPublication, activeSectionIndex]);
+
+  // Arrow / Page / Space Navigation for desktop window with writing-mode awareness
   useEffect(() => {
     const handleNavKeys = (e: KeyboardEvent) => {
       if (viewMode !== "reader") return;
       if (
         document.activeElement?.tagName === "INPUT" ||
         document.activeElement?.tagName === "SELECT" ||
-        document.activeElement?.tagName === "TEXTAREA"
+        document.activeElement?.tagName === "TEXTAREA" ||
+        (document.activeElement as HTMLElement)?.isContentEditable
       ) {
         return;
       }
 
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        if (documentKind === "epub") {
-          if (activeSectionIndex > 0) {
-            handleEpubSectionChange(activeSectionIndex - 1);
-          }
-        } else if (documentKind === "pdf") {
-          if (currentPage > 1) {
-            handlePdfPageChange(currentPage - 1, totalPages);
-          }
-        }
-      } else if (e.key === "ArrowRight") {
+      const isVertical = resolvedWritingMode === "vertical-rl";
+      const isNext =
+        (isVertical ? e.key === "ArrowLeft" : e.key === "ArrowRight") ||
+        e.key === "PageDown" ||
+        (e.key === " " && !e.shiftKey);
+
+      const isPrev =
+        (isVertical ? e.key === "ArrowRight" : e.key === "ArrowLeft") ||
+        e.key === "PageUp" ||
+        (e.key === " " && e.shiftKey);
+
+      if (isNext) {
         e.preventDefault();
         if (documentKind === "epub") {
           if (
@@ -896,6 +923,17 @@ export const App: React.FC = () => {
         } else if (documentKind === "pdf") {
           if (currentPage < totalPages) {
             handlePdfPageChange(currentPage + 1, totalPages);
+          }
+        }
+      } else if (isPrev) {
+        e.preventDefault();
+        if (documentKind === "epub") {
+          if (activeSectionIndex > 0) {
+            handleEpubSectionChange(activeSectionIndex - 1);
+          }
+        } else if (documentKind === "pdf") {
+          if (currentPage > 1) {
+            handlePdfPageChange(currentPage - 1, totalPages);
           }
         }
       }
@@ -912,6 +950,7 @@ export const App: React.FC = () => {
     epubPublication,
     currentPage,
     totalPages,
+    resolvedWritingMode,
     handleEpubSectionChange,
     handlePdfPageChange,
   ]);
@@ -1194,6 +1233,16 @@ export const App: React.FC = () => {
         onClose={() => setSettingsOpen(false)}
         onUpdateSettings={handleUpdateSettings}
       />
+
+      {/* Screen Reader Live Status Region */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {srAnnouncement}
+      </div>
     </div>
   );
 };

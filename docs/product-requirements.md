@@ -63,11 +63,18 @@ To ensure absolute transparency between implemented features and planned milesto
 - Desktop Workbench Library view with responsive Grid and List layouts, multi-field search, collection/shelf management, and format categories.
 - Round-trip navigation between Library view and Reader MVP.
 
+### Implemented in Milestone 0.5 (Reading Tools)
+
+- `@reflowpress/annotations` domain package for W3C Web Annotation-compliant hybrid locators, highlights, notes, bookmarks, and operations.
+- `@reflowpress/search` domain package for in-book full-text search across EPUB and PDF publications with HTML tag stripping, entity decoding, and context snippet extraction.
+- Desktop reading tools drawer with Search, Bookmarks, Highlights, and Notes tabs, plus search hit jump navigation.
+- Floating selection toolbar for multi-color text highlights (yellow, green, blue, pink) and note attachment.
+- Versioned atomic JSON annotation persistence (`annotations-v1.json`) with serialized queue, `fsync`, and corrupt file quarantine (`.corrupt-<timestamp>`).
+- Portable PKM annotation export (Markdown, standalone HTML, JSON) and conflict-safe JSON import.
+
 ### Not Implemented (Planned in Future Milestones)
 
-- Full-text search engine (Milestone 0.5)
-- Bookmarks, highlights, and note annotations (Milestone 0.5)
-- Portable annotation export (JSON, Markdown, HTML) (Milestone 0.5)
+- Japanese vertical typography and accessibility baseline (Milestone 0.6)
 - EPUB to PDF conversion engine (Milestone 0.7)
 - PDF Quality Gate automated verification (Milestone 0.8)
 - Headless CLI workflow (Milestone 0.7)
@@ -130,16 +137,17 @@ To ensure absolute transparency between implemented features and planned milesto
 - [x] Attach user notes and annotations to highlights.
 - [x] Export annotations to standard JSON, Markdown, and HTML.
 
-### Milestone 0.6: Japanese Typography & Accessibility (Next Priority)
+### Milestone 0.6: Japanese Typography & Accessibility (Complete)
 
-- [ ] Native support for vertical text layout (`writing-mode: vertical-rl`) with vertical paging.
-- [ ] Correct positioning for ruby annotations (`<ruby>`, `<rt>`) in horizontal and vertical modes.
-- [ ] Implement Japanese line-breaking rules (Kinsoku shori) and Tate-chu-yoko (TCY).
-- [ ] Full keyboard controllability for all library and reader functions.
-- [ ] Semantic HTML and ARIA labels verified for screen-reader compatibility.
-- [ ] Bidirectional (Bidi) and Right-to-Left (RTL) reading planning.
+- [x] Native support for vertical text layout (`writing-mode: vertical-rl`) with vertical column stepping.
+- [x] Correct presentation and styling for ruby annotations (`<ruby>`, `<rt>`, `<rp>`) across horizontal and vertical modes.
+- [x] Implement Japanese line-breaking rules (Kinsoku shori) and Tate-chu-yoko (TCY) with non-destructive numeral alignment.
+- [x] Full keyboard controllability for all library and reader functions, dialog focus trap and restoration.
+- [x] Semantic HTML and ARIA labels verified for screen-reader compatibility with polite live announcements.
+- [x] Automated accessibility regression suite via `@axe-core/playwright` scanning with 0 critical or serious violations.
+- [x] Bidirectional (Bidi) and Right-to-Left (RTL) reading planning and MathML preservation.
 
-### Milestone 0.7: Export Workbench
+### Milestone 0.7: Export Workbench (Next Priority)
 
 - [ ] High-fidelity EPUB to PDF conversion using CSS Paged Media layout.
 - [ ] Deterministic PDF output naming:

@@ -1,3 +1,5 @@
+import type { TateChuYokoMode, WritingMode } from "@reflowpress/typography";
+
 export type ReaderTheme = "light" | "dark" | "sepia";
 
 export interface ReaderSettings {
@@ -6,6 +8,8 @@ export interface ReaderSettings {
   readonly lineHeight: number;
   readonly margin: number;
   readonly theme: ReaderTheme;
+  readonly writingMode?: WritingMode | undefined;
+  readonly tateChuYoko?: TateChuYokoMode | undefined;
 }
 
 export const MIN_FONT_SIZE = 10;
@@ -26,6 +30,8 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   lineHeight: DEFAULT_LINE_HEIGHT,
   margin: DEFAULT_MARGIN,
   theme: "light",
+  writingMode: "auto",
+  tateChuYoko: "author",
 };
 
 export function clampFontSize(size: number): number {

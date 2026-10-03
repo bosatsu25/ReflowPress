@@ -15,6 +15,7 @@
       "@reflowpress/renderer": ["./packages/renderer/src/index.ts"],
       "@reflowpress/pdf": ["./packages/pdf/src/index.ts"],
       "@reflowpress/search": ["./packages/search/src/index.ts"],
+      "@reflowpress/typography": ["./packages/typography/src/index.ts"],
       "@reflowpress/validation": ["./packages/validation/src/index.ts"]
     }
   },

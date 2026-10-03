@@ -164,6 +164,7 @@ export const ReadingToolsDrawer: React.FC<ReadingToolsDrawerProps> = ({
 
   return (
     <aside
+      id="reading-tools-drawer-panel"
       className="reading-tools-drawer"
       aria-label="Reading Tools"
       style={{

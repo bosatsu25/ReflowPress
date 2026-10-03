@@ -86,9 +86,9 @@ test.describe("ReflowPress Library MVP Desktop E2E", () => {
     await page.reload();
     await page.waitForLoadState("domcontentloaded");
 
-    // Book cards should now be rendered
+    // Book cards should now be rendered (sample.epub, sample-japanese.epub, sample.pdf)
     const cards = page.locator(".book-card");
-    await expect(cards).toHaveCount(2);
+    await expect(cards).toHaveCount(3);
 
     // Format badges
     await expect(page.locator("span:has-text('EPUB')").first()).toBeVisible();

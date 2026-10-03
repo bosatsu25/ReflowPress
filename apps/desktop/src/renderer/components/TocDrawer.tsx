@@ -120,7 +120,9 @@ export const TocDrawer: React.FC<TocDrawerProps> = ({
 
       {/* Drawer */}
       <aside
+        id="toc-drawer-panel"
         className="toc-drawer"
+        aria-label="Table of Contents"
         style={{
           position: "fixed",
           top: "48px",

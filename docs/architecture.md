@@ -25,9 +25,9 @@ flowchart TD
 
     subgraph CONSUMER_SUB[Application Features & Engines]
         READER[Reader Engine<br/>implemented in 0.3]
-        ANNOTATION[Annotation Store<br/>planned]
+        ANNOTATION[Annotation Store<br/>implemented in 0.5]
         LIBRARY[Library Catalog<br/>implemented in 0.4]
-        SEARCH[Search Index<br/>planned]
+        SEARCH[Search Index<br/>implemented in 0.5]
         EXPORT[Export Engine<br/>PDF / HTML / Markdown<br/>planned]
         VALIDATION[Validation Gate<br/>PDF Quality Gate<br/>planned]
     end
@@ -138,16 +138,22 @@ export interface NormalizedPublication {
 
 ## Package Architecture Proposal
 
-### Current Package Structure (Phase 1 Baseline)
+### Current Package Structure (Milestone 0.6)
 
 ```text
 packages/
-  core/        - Shared format-neutral contracts
-  epub/        - EPUB Inspector (implemented), adapter contracts (planned)
+  core/        - Shared format-neutral publication contracts
+  epub/        - EPUB Inspector, EPUB 2/3 Loader, navigation normalization
+  library/     - Local library domain, scanning, search, collections
+  annotations/ - W3C Web Annotation locators, notes, bookmarks, PKM export/import
+  search/      - In-book full-text search engine (EPUB and PDF)
+  typography/  - Standards-based typography, writing mode resolution, TCY transform
+  reader/      - Reader state, navigation stepping, user settings
   pdf/         - PDF output contract types
   renderer/    - Renderer interface contracts
-  validation/  - PDF validator interface contracts
+  validation/  - Validation interface contracts
 apps/
+  desktop/     - Electron 33 + React 19 + Vite desktop workbench application
   cli/         - Command-line entry point (placeholder)
 ```
 
@@ -376,6 +382,71 @@ flowchart TD
    - **JSON**: Complete structured serialization enabling backup, tool migration, and bi-directional import with duplicate deduplication and ID-conflict remapping.
    - Source publications (EPUB/PDF) are **never** modified or mutated.
    - Full rationale documented in [ADR 0005: Annotation Locators, Selectors, and Storage Architecture](adr/0005-annotation-locators-and-storage.md).
+
+---
+
+## Japanese Typography & Accessibility Architecture (Milestone 0.6)
+
+Milestone 0.6 introduces first-class Japanese typography and a comprehensive WCAG 2.2 Level AA accessibility baseline as defined in [ADR 0006: Japanese Typography and Accessibility Architecture](adr/0006-japanese-typography-and-accessibility.md).
+
+```mermaid
+flowchart TD
+    subgraph TYPO_PKG[@reflowpress/typography — Pure Domain]
+        MODELS[Typography Models<br/>WritingMode, ReadingFlow, TypographyProfile]
+        RESOLVER[flow.ts<br/>resolveWritingMode & resolveReadingFlow]
+        CSS_GEN[css-generator.ts<br/>generateTypographyCss & normalizeLegacyEpubCss]
+        TCY[tcy-transform.ts<br/>applyTcyAssist & removeTcySpans]
+    end
+
+    subgraph REUSE[Cross-Milestone Consumers]
+        READER_UI[Reader UI (Milestone 0.6)<br/>EpubViewer, Axis-aware Nav, Settings]
+        EXPORT_ENG[Export Engine (Milestone 0.7)<br/>EPUB to PDF / HTML with CSS Paged Media]
+    end
+
+    subgraph ACCESSIBILITY[WCAG 2.2 AA Accessibility Baseline]
+        KEYBOARD[Keyboard Nav & Focus Trap<br/>Tab loop, Escape dismiss, Focus restore]
+        LIVE_REGION[Polite ARIA Live Region<br/>Screen reader status announcements]
+        CONTRAST[Accessible Themes<br/>High contrast, forced-colors, reduced-motion]
+        AXE_AUDIT[Automated Axe-Core Auditing<br/>Continuous a11y regression scans]
+    end
+
+    MODELS --> RESOLVER --> CSS_GEN
+    RESOLVER --> READER_UI
+    CSS_GEN --> READER_UI
+    TCY --> READER_UI
+    CSS_GEN --> EXPORT_ENG
+    MODELS --> EXPORT_ENG
+
+    READER_UI --> ACCESSIBILITY
+```
+
+### Architectural Key Decisions & Safeguards:
+
+1. **Chromium Standards-Based Typography**:
+   - Rather than rolling an ad-hoc custom typesetting engine, ReflowPress relies on Chromium's native implementation of CSS Writing Modes Level 3 (`writing-mode: vertical-rl`), CSS Text Level 3 (`line-break: strict;`, `word-break: normal;`), and HTML5 `<ruby>`, `<rt>`, and `<rp>`.
+   - Legacy EPUB-specific prefixes (`-epub-writing-mode`, `-epub-text-combine`, `-epub-line-break`) are safely and idempotently normalized to standard CSS properties.
+
+2. **Pure Domain Package Separation (`@reflowpress/typography`)**:
+   - Typography rules, CSS generation, reading progression resolution, and numeral transforms are housed entirely within `@reflowpress/typography` without DOM, React, or Electron dependencies.
+   - This ensures identical typography rendering rules will be reused in Milestone 0.7 (Export Workbench to PDF/HTML) without duplicating styling logic.
+
+3. **Author Styles First with User Override**:
+   - Default `writingMode: "auto"` inspects EPUB OPF spine metadata (`page-progression-direction="rtl"`) and CSS declarations to preserve the publisher's intended layout.
+   - Users can explicitly override layout to `horizontal-tb` or `vertical-rl` in Reader Settings at any time.
+
+4. **Non-destructive Tate-chu-yoko (TCY) Numeral Alignment**:
+   - In vertical text, 1–2 digit numbers are aligned horizontally (`text-combine-upright: all`).
+   - The auto-assist transform (`applyTcyAssist()`) wraps 1–2 digit ASCII numbers in `<span class="reflowpress-tcy">` without altering underlying textContent, ensuring zero disruption to W3C `TextQuoteSelector` anchoring, search indexing, or user text selections.
+
+5. **Axis-Aware Navigation**:
+   - In `vertical-rl` mode, reading columns advance to the left (`scrollBy({ left: -step })`).
+   - Arrow and Page keys adapt dynamically (`ArrowLeft` navigates forward in vertical-rl, backward in horizontal-tb; `PageDown` and `Space` always advance reading progression).
+
+6. **WCAG 2.2 AA Accessibility Baseline**:
+   - **Keyboard Navigation**: All interactive elements are reachable and operable via keyboard with prominent, accessible focus rings.
+   - **Dialog Focus Management**: `SettingsModal` enforces a strict Tab focus trap, initial focus placement, Escape dismissal, and focus restoration to the originating control.
+   - **Screen Reader Announcements**: A polite `aria-live` region announces page shifts, chapter transitions, search results, and setting updates without interrupting active speech synthesizers.
+   - **Automated Regression Audits**: Playwright E2E tests incorporate `@axe-core/playwright` scanning across Library, Reader, Settings, and Reading Tools to guarantee 0 critical or serious accessibility violations.
 
 ---
 

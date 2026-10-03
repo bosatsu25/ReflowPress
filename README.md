@@ -12,7 +12,7 @@ ReflowPress bridges document reading, library organization, publication health i
 
 > [!IMPORTANT]
 > **ReflowPress is in active foundation development.**
-> Do not mistake planned functionality for implemented features. The desktop reader GUI is **implemented (Milestone 0.3)**. Library management, reading tools, PDF conversion, and repair tools are **planned for future milestones**.
+> Do not mistake planned functionality for implemented features. The desktop reader GUI (Milestone 0.3), Library catalog (Milestone 0.4), Reading Tools (Milestone 0.5), and Japanese Typography & Accessibility (Milestone 0.6) are **implemented**. PDF conversion (Milestone 0.7) and repair tools (Milestone 0.8) are in progress or planned.
 
 ### Current State (`main`)
 
@@ -21,13 +21,14 @@ ReflowPress bridges document reading, library organization, publication health i
 - **Milestone 0.3 (Reader MVP)**: **Complete** (Implements `@reflowpress/reader` and `@reflowpress/desktop` application shell with Electron 33, React 19, Vite, PDF.js, reflowable EPUB iframe isolation, XHTML sanitizer, native PDF viewing, TOC drawer, keyboard/page stepping, Light/Dark/Sepia themes, typography controls, atomic reading position persistence, and Playwright desktop E2E tests).
 - **Milestone 0.4 (Library MVP)**: **Complete** (Implements `@reflowpress/library` domain package, recursive local directory scanner with incremental indexing, versioned atomic JSON catalog persistence with corrupt file quarantine, EPUB cover extraction and caching, Grid/List catalog views, multi-field search, collection/shelf organization, and Playwright desktop E2E tests).
 - **Milestone 0.5 (Reading Tools)**: **Complete** (Implements `@reflowpress/annotations` domain package, `@reflowpress/search` in-book search engine for EPUB and PDF, W3C Web Annotation compliant hybrid locators, multi-color text highlights, bookmarks, margin notes, versioned atomic JSON annotation persistence with corrupt quarantine, portable Markdown/HTML/JSON export and import, drawer UI, floating selection toolbar, hotkeys, and Playwright desktop E2E tests).
+- **Milestone 0.6 (Japanese Typography & Accessibility)**: **Complete** (Implements `@reflowpress/typography` domain package, Chromium standards-based CSS Writing Modes (`vertical-rl`), strict kinsoku line breaking, native `<ruby>` presentation, Tate-chu-yoko numeral alignment with non-destructive auto-assist, axis-aware keyboard and column progression, WCAG 2.2 AA accessibility baseline with full keyboard focus management, focus trap and restoration for dialogs, polite ARIA live announcements, high contrast and forced-colors support, reduced motion preferences, automated axe-core accessibility regression testing, and Playwright desktop E2E tests).
 - **EPUB Inspector (`inspectEpub`)**: **Implemented** (Parses ZIP container, `container.xml`, and OPF package document; extracts metadata, manifest, and spine; enforces path safety and resource limits).
 - **Publication Core (`loadEpub`, `EpubLoader`)**: **Implemented** (`NormalizedPublication` model, reading order, navigation hierarchy, metadata, auxiliary assets).
 - **Desktop Reader MVP**: **Implemented** (EPUB/PDF viewing, TOC, reading positions, themes, typography settings).
 - **Library Catalog & Collections**: **Implemented** (Recursive scanning, cover cache, collections, shelves, search, tags).
 - **Reading Tools (Search, Notes, Annotations)**: **Implemented** (In-book search, bookmarks, highlights, notes, portable PKM export/import).
-- **Japanese Typography & Accessibility**: **Next (Milestone 0.6)**.
-- **Export Workbench (EPUB to PDF/HTML/MD)**: **Planned (Milestone 0.7)**.
+- **Japanese Typography & Accessibility**: **Implemented (Milestone 0.6)**.
+- **Export Workbench (EPUB to PDF/HTML/MD)**: **Next (Milestone 0.7)**.
 - **Publication Repair & PDF Quality Gate**: **Planned (Milestone 0.8)**.
 
 ---
@@ -52,10 +53,10 @@ flowchart TD
     end
 
     subgraph CONSUMER_SUB[Application Features & Engines]
-        READER[Reader Engine<br/>implemented]
-        ANNOTATION[Annotation Store<br/>planned]
-        LIBRARY[Library Catalog<br/>planned]
-        SEARCH[Search Index<br/>planned]
+        READER[Reader Engine<br/>implemented in 0.3]
+        ANNOTATION[Annotation Store<br/>implemented in 0.5]
+        LIBRARY[Library Catalog<br/>implemented in 0.4]
+        SEARCH[Search Index<br/>implemented in 0.5]
         EXPORT[Export Engine<br/>PDF / HTML / Markdown<br/>planned]
         VALIDATION[Validation Gate<br/>PDF Quality Gate<br/>planned]
     end
@@ -138,8 +139,8 @@ Read the complete [Product Vision](docs/product-vision.md) and [ADE Compatibilit
 | **0.3 Reader MVP**       | Reflowable EPUB rendering, PDF viewing, TOC, reading position, themes         | **Complete** |
 | **0.4 Library MVP**      | Local directory scan, covers, metadata catalog, collections, sorting          | **Complete** |
 | **0.5 Reading Tools**    | In-book search, bookmarks, highlights, notes, portable annotation export      | **Complete** |
-| **0.6 Japanese & A11y**  | Vertical Japanese (`vertical-rl`), ruby, kinsoku, keyboard nav, screen-reader | **Next**     |
-| **0.7 Export Workbench** | EPUB to PDF (timestamp naming), HTML, Markdown, batch CLI                     | Planned      |
+| **0.6 Japanese & A11y**  | Vertical Japanese (`vertical-rl`), ruby, kinsoku, keyboard nav, screen-reader | **Complete** |
+| **0.7 Export Workbench** | EPUB to PDF (timestamp naming), HTML, Markdown, batch CLI                     | **Next**     |
 | **0.8 Quality & Repair** | Diagnostic health suite, non-destructive safe repair, PDF Quality Gate        | Planned      |
 | **0.9 Interoperability** | OPDS catalog support, e-reader device transfer, local cloud sync              | Planned      |
 | **1.0 Stable Release**   | Native installers, crash recovery, performance optimization, API freeze       | Planned      |
@@ -188,3 +189,4 @@ pnpm test:e2e
 - [ADR 0003: Desktop Reader Runtime (Electron + React + Vite + PDF.js)](docs/adr/0003-desktop-reader-runtime.md)
 - [ADR 0004: Library Persistence Architecture and Repository Abstraction](docs/adr/0004-library-persistence.md)
 - [ADR 0005: Annotation Locators, Selectors, and Storage Architecture](docs/adr/0005-annotation-locators-and-storage.md)
+- [ADR 0006: Japanese Typography and Accessibility Architecture](docs/adr/0006-japanese-typography-and-accessibility.md)
