@@ -9,6 +9,14 @@ import {
   type ExportWritingMode,
   type BatchExportReport,
 } from "@reflowpress/export";
+import {
+  inspectEpubHealth,
+  inspectPdfHealth,
+  evaluateQualityGate,
+  type QualityProfile,
+  type HealthReport,
+} from "@reflowpress/quality";
+import { planRepairs, executeRepair } from "@reflowpress/repair";
 
 export const CLI_VERSION = "0.1.0";
 
@@ -19,7 +27,7 @@ export const EXIT_CODES = {
 } as const;
 
 export interface CliOptions {
-  readonly format: ExportFormat;
+  readonly format?: ExportFormat | undefined;
   readonly outputDir?: string | undefined;
   readonly pageSize?: ExportPageSize | undefined;
   readonly margin?: string | undefined;
@@ -31,18 +39,26 @@ export interface CliOptions {
   readonly quiet?: boolean | undefined;
 }
 
+export interface CliIo {
+  stdout?: ((msg: string) => void) | undefined;
+  stderr?: ((msg: string) => void) | undefined;
+  signal?: AbortSignal | undefined;
+}
+
 export function printHelp(): void {
   const helpText = `
 ReflowPress Export Workbench CLI v${CLI_VERSION}
 
 Usage:
-  reflowpress export [options] <files or directories...>
-  reflowpress [options] <files or directories...>
+  reflowpress [command] [options] <files or directories...>
 
 Commands:
   export                      Export EPUB publications to PDF, HTML, or Markdown (default)
+  inspect                     Inspect publication health (EPUB or PDF)
+  validate                    Validate PDF outputs against Quality Gate profiles
+  repair                      Plan or execute safe repairs on EPUB publications (dry-run by default)
 
-Options:
+Export Options:
   -f, --format <format>       Output format: pdf | html | markdown | all (default: pdf)
   -o, --output-dir <path>     Target output directory (default: adjacent to input)
   -s, --page-size <size>      PDF page size: A4 | A5 | B5 | Letter (default: A4)
@@ -51,6 +67,16 @@ Options:
   -j, --jobs <n>              Concurrency level for batch exports (default: 4)
       --overwrite             Overwrite existing output files instead of appending -001
   -r, --recursive             Recursively find all .epub files in input directories
+
+Inspect & Validation Options:
+      --profile <profile>     PDF validation profile: baseline | reader-export (default: baseline)
+
+Repair Options:
+      --apply                 Execute safe repair and write repaired archive (default: preview only)
+      --rule <id>             Filter repair actions to specific diagnostic rule ID
+      --provenance            Write .provenance.json sidecar metadata
+
+Global Options:
       --json                  Print structured JSON report to stdout
   -q, --quiet                 Suppress progress messages (errors still print to stderr)
   -v, --version               Show CLI version
@@ -58,17 +84,20 @@ Options:
 
 Examples:
   reflowpress export book.epub --format pdf
-  reflowpress export ./library --recursive --format all --output-dir ./dist
-  reflowpress export novel.epub --format pdf --writing-mode vertical-rl --page-size B5
+  reflowpress inspect book.epub
+  reflowpress validate exported.pdf --profile reader-export
+  reflowpress repair book.epub
+  reflowpress repair book.epub --apply --output-dir ./repaired
 `;
   console.log(helpText.trim());
 }
 
-async function findEpubFiles(
+async function findFiles(
   targets: readonly string[],
   recursive: boolean,
+  extensions: readonly string[],
 ): Promise<string[]> {
-  const epubPaths: string[] = [];
+  const matchedPaths: string[] = [];
 
   for (const target of targets) {
     const resolved = path.resolve(target);
@@ -76,30 +105,31 @@ async function findEpubFiles(
     try {
       stat = await fs.stat(resolved);
     } catch {
-      // If an explicitly specified target does not exist, include it so the orchestrator
-      // or batch runner can report the missing file error cleanly
-      epubPaths.push(resolved);
+      matchedPaths.push(resolved);
       continue;
     }
 
     if (stat.isFile()) {
-      epubPaths.push(resolved);
+      matchedPaths.push(resolved);
     } else if (stat.isDirectory()) {
       const entries = await fs.readdir(resolved, {
         withFileTypes: true,
         recursive,
       });
       for (const entry of entries) {
-        if (entry.isFile() && entry.name.toLowerCase().endsWith(".epub")) {
-          const parent =
-            (entry as { parentPath?: string }).parentPath ?? resolved;
-          epubPaths.push(path.join(parent, entry.name));
+        if (entry.isFile()) {
+          const lower = entry.name.toLowerCase();
+          if (extensions.some((ext) => lower.endsWith(ext))) {
+            const parent =
+              (entry as { parentPath?: string }).parentPath ?? resolved;
+            matchedPaths.push(path.join(parent, entry.name));
+          }
         }
       }
     }
   }
 
-  return [...new Set(epubPaths)].sort();
+  return [...new Set(matchedPaths)].sort();
 }
 
 /**
@@ -108,11 +138,7 @@ async function findEpubFiles(
  */
 export async function runCli(
   args: readonly string[],
-  io: {
-    stdout?: (msg: string) => void;
-    stderr?: (msg: string) => void;
-    signal?: AbortSignal;
-  } = {},
+  io: CliIo = {},
 ): Promise<number> {
   const log = io.stdout ?? ((m: string) => console.log(m));
   const logErr = io.stderr ?? ((m: string) => console.error(m));
@@ -130,6 +156,10 @@ export async function runCli(
         jobs: { type: "string", short: "j" },
         overwrite: { type: "boolean", default: false },
         recursive: { type: "boolean", short: "r", default: false },
+        profile: { type: "string", default: "baseline" },
+        apply: { type: "boolean", default: false },
+        rule: { type: "string" },
+        provenance: { type: "boolean", default: false },
         json: { type: "boolean", default: false },
         quiet: { type: "boolean", short: "q", default: false },
         version: { type: "boolean", short: "v", default: false },
@@ -156,16 +186,327 @@ export async function runCli(
     return EXIT_CODES.SUCCESS;
   }
 
-  // Strip sub-command "export" if provided as first positional argument
-  const targetInputs =
-    positionals[0] === "export" ? positionals.slice(1) : positionals;
+  const command = ["export", "inspect", "validate", "repair"].includes(
+    positionals[0] ?? "",
+  )
+    ? positionals[0]!
+    : "export";
 
-  if (targetInputs.length === 0) {
+  const rawInputs = ["export", "inspect", "validate", "repair"].includes(
+    positionals[0] ?? "",
+  )
+    ? positionals.slice(1)
+    : positionals;
+
+  if (rawInputs.length === 0) {
     logErr("Error: No input files or directories specified.");
     logErr("Run 'reflowpress --help' for usage instructions.");
     return EXIT_CODES.FATAL_ERROR;
   }
 
+  const isQuiet = Boolean(values.quiet);
+  const isJson = Boolean(values.json);
+  const isRecursive = Boolean(values.recursive);
+
+  // Dispatch to subcommand
+  if (command === "inspect") {
+    return runInspect(rawInputs, { isJson, isQuiet, isRecursive }, log, logErr);
+  }
+
+  if (command === "validate") {
+    const profile = (
+      values.profile === "reader-export" ? "reader-export" : "baseline"
+    ) as QualityProfile;
+    return runValidate(
+      rawInputs,
+      { profile, isJson, isQuiet, isRecursive },
+      log,
+      logErr,
+    );
+  }
+
+  if (command === "repair") {
+    return runRepair(
+      rawInputs,
+      {
+        apply: Boolean(values.apply),
+        ruleId: values.rule,
+        outputDir: values["output-dir"],
+        provenance: Boolean(values.provenance),
+        isJson,
+        isQuiet,
+        isRecursive,
+      },
+      log,
+      logErr,
+    );
+  }
+
+  // Default: export
+  return runExport(
+    rawInputs,
+    values,
+    { isJson, isQuiet, isRecursive, signal: io.signal },
+    log,
+    logErr,
+  );
+}
+
+async function runInspect(
+  inputs: readonly string[],
+  options: { isJson: boolean; isQuiet: boolean; isRecursive: boolean },
+  log: (m: string) => void,
+  logErr: (m: string) => void,
+): Promise<number> {
+  const files = await findFiles(inputs, options.isRecursive, [".epub", ".pdf"]);
+  if (files.length === 0) {
+    logErr(
+      `Error: No .epub or .pdf files found matching inputs: ${inputs.join(", ")}`,
+    );
+    return EXIT_CODES.FATAL_ERROR;
+  }
+
+  const reports: HealthReport[] = [];
+  let hasFatalOrError = false;
+  let hasWarning = false;
+
+  for (const file of files) {
+    let report: HealthReport;
+    if (file.toLowerCase().endsWith(".pdf")) {
+      try {
+        const bytes = await fs.readFile(file);
+        report = inspectPdfHealth(bytes, file);
+      } catch (err) {
+        logErr(
+          `Failed to read PDF '${file}': ${err instanceof Error ? err.message : String(err)}`,
+        );
+        hasFatalOrError = true;
+        continue;
+      }
+    } else {
+      report = await inspectEpubHealth(file);
+    }
+
+    reports.push(report);
+    if (report.summary.fatalCount > 0 || report.summary.errorCount > 0) {
+      hasFatalOrError = true;
+    }
+    if (report.summary.warningCount > 0) {
+      hasWarning = true;
+    }
+  }
+
+  if (options.isJson) {
+    log(JSON.stringify(reports.length === 1 ? reports[0] : reports, null, 2));
+  } else if (!options.isQuiet) {
+    for (const report of reports) {
+      log(
+        `\n=== Publication Health Report: ${path.basename(report.publicationPath)} ===`,
+      );
+      log(
+        `Type: ${report.publicationType.toUpperCase()} | Duration: ${report.durationMs}ms`,
+      );
+      log(
+        `Findings: ${report.summary.totalFindings} (Fatal: ${report.summary.fatalCount}, Error: ${report.summary.errorCount}, Warning: ${report.summary.warningCount}, Info: ${report.summary.infoCount})`,
+      );
+      log(
+        `Repairable: ${report.summary.safeRepairableCount} safe-auto, ${report.summary.reviewRequiredCount} review-required, ${report.summary.manualCount} manual`,
+      );
+
+      if (report.findings.length > 0) {
+        log("\nDiagnostics:");
+        for (const f of report.findings) {
+          const loc = f.location?.path
+            ? ` [${f.location.path}${f.location.line ? `:${f.location.line}` : ""}]`
+            : "";
+          log(
+            `  [${f.severity.toUpperCase()}] ${f.ruleId}${loc}: ${f.message}`,
+          );
+        }
+      } else {
+        log("\n✓ No quality issues found. Publication is healthy.");
+      }
+    }
+  }
+
+  if (hasFatalOrError) return EXIT_CODES.FATAL_ERROR;
+  if (hasWarning) return EXIT_CODES.PARTIAL_FAILURE;
+  return EXIT_CODES.SUCCESS;
+}
+
+async function runValidate(
+  inputs: readonly string[],
+  options: {
+    profile: QualityProfile;
+    isJson: boolean;
+    isQuiet: boolean;
+    isRecursive: boolean;
+  },
+  log: (m: string) => void,
+  logErr: (m: string) => void,
+): Promise<number> {
+  const files = await findFiles(inputs, options.isRecursive, [".pdf"]);
+  if (files.length === 0) {
+    logErr(`Error: No .pdf files found matching inputs: ${inputs.join(", ")}`);
+    return EXIT_CODES.FATAL_ERROR;
+  }
+
+  const results = [];
+  let allPassed = true;
+
+  for (const file of files) {
+    try {
+      const bytes = await fs.readFile(file);
+      const report = inspectPdfHealth(bytes, file);
+      const gateResult = evaluateQualityGate(report, options.profile);
+      results.push(gateResult);
+      if (!gateResult.passed) {
+        allPassed = false;
+      }
+    } catch (err) {
+      logErr(
+        `Failed to read PDF '${file}': ${err instanceof Error ? err.message : String(err)}`,
+      );
+      allPassed = false;
+    }
+  }
+
+  if (options.isJson) {
+    log(JSON.stringify(results.length === 1 ? results[0] : results, null, 2));
+  } else if (!options.isQuiet) {
+    for (const res of results) {
+      const statusStr = res.passed ? "PASS" : "FAIL";
+      log(
+        `[${statusStr}] ${path.basename(res.report.publicationPath)} (profile: ${res.profile})`,
+      );
+      if (!res.passed) {
+        for (const v of res.violations) {
+          log(`  - [${v.severity.toUpperCase()}] ${v.ruleId}: ${v.message}`);
+        }
+      }
+    }
+  }
+
+  return allPassed ? EXIT_CODES.SUCCESS : EXIT_CODES.FATAL_ERROR;
+}
+
+async function runRepair(
+  inputs: readonly string[],
+  options: {
+    apply: boolean;
+    ruleId?: string | undefined;
+    outputDir?: string | undefined;
+    provenance: boolean;
+    isJson: boolean;
+    isQuiet: boolean;
+    isRecursive: boolean;
+  },
+  log: (m: string) => void,
+  logErr: (m: string) => void,
+): Promise<number> {
+  const files = await findFiles(inputs, options.isRecursive, [".epub"]);
+  if (files.length === 0) {
+    logErr(`Error: No .epub files found matching inputs: ${inputs.join(", ")}`);
+    return EXIT_CODES.FATAL_ERROR;
+  }
+
+  const results = [];
+  let hasFailure = false;
+
+  for (const file of files) {
+    const report = await inspectEpubHealth(file);
+    const { plan, preview } = planRepairs(report, {
+      specificRuleIds: options.ruleId ? [options.ruleId] : undefined,
+    });
+
+    if (!options.apply) {
+      // Dry-run preview
+      results.push({ publication: file, plan, preview, mode: "dry-run" });
+      if (!options.isJson && !options.isQuiet) {
+        log(`\n=== Repair Preview (Dry Run): ${path.basename(file)} ===`);
+        log(
+          `Planned actions: ${plan.actions.length} (${plan.safeActionCount} safe-auto)`,
+        );
+        if (plan.actions.length === 0) {
+          log("No repairable issues detected.");
+        } else {
+          for (const action of plan.actions) {
+            log(
+              `  - [${action.risk.toUpperCase()}] ${action.title} (${action.targetFile})`,
+            );
+          }
+          log(
+            "\nRun with '--apply' to execute these repairs non-destructively.",
+          );
+        }
+      }
+    } else {
+      // Execute repair
+      if (plan.actions.length === 0) {
+        results.push({
+          publication: file,
+          success: true,
+          message: "No repairs needed",
+        });
+        if (!options.isQuiet && !options.isJson) {
+          log(`\n${path.basename(file)}: No repairable issues found.`);
+        }
+        continue;
+      }
+
+      const repairResult = await executeRepair(file, plan, {
+        outputDir: options.outputDir
+          ? path.resolve(options.outputDir)
+          : undefined,
+        writeProvenance: options.provenance,
+      });
+
+      results.push(repairResult);
+      if (!repairResult.success) {
+        hasFailure = true;
+        if (!options.isQuiet && !options.isJson) {
+          logErr(
+            `\nRepair failed for ${path.basename(file)}: ${repairResult.error}`,
+          );
+        }
+      } else if (!options.isQuiet && !options.isJson) {
+        log(`\n✓ Repaired publication created: ${repairResult.outputPath}`);
+        log(
+          `  Applied ${repairResult.actionsApplied.length} action(s). Verified clean with 0 regressions.`,
+        );
+      }
+    }
+  }
+
+  if (options.isJson) {
+    log(JSON.stringify(results.length === 1 ? results[0] : results, null, 2));
+  }
+
+  return hasFailure ? EXIT_CODES.FATAL_ERROR : EXIT_CODES.SUCCESS;
+}
+
+interface ExportCliValues {
+  readonly format?: string | undefined;
+  readonly "page-size"?: string | undefined;
+  readonly "writing-mode"?: string | undefined;
+  readonly "output-dir"?: string | undefined;
+  readonly margin?: string | undefined;
+  readonly jobs?: string | undefined;
+  readonly overwrite?: boolean | undefined;
+}
+
+async function runExport(
+  rawInputs: readonly string[],
+  values: ExportCliValues,
+  options: {
+    isJson: boolean;
+    isQuiet: boolean;
+    isRecursive: boolean;
+    signal?: AbortSignal | undefined;
+  },
+  log: (m: string) => void,
+  logErr: (m: string) => void,
+): Promise<number> {
   // Validate format
   const formatStr = values.format?.toLowerCase() || "pdf";
   if (!["pdf", "html", "markdown", "all"].includes(formatStr)) {
@@ -202,15 +543,10 @@ export async function runCli(
     return EXIT_CODES.FATAL_ERROR;
   }
 
-  const isQuiet = Boolean(values.quiet);
-  const isJson = Boolean(values.json);
-  const isRecursive = Boolean(values.recursive);
-
-  // Discover EPUB files
-  const epubFiles = await findEpubFiles(targetInputs, isRecursive);
+  const epubFiles = await findFiles(rawInputs, options.isRecursive, [".epub"]);
   if (epubFiles.length === 0) {
     logErr(
-      `Error: No .epub files found matching input targets: ${targetInputs.join(", ")}`,
+      `Error: No .epub files found matching input targets: ${rawInputs.join(", ")}`,
     );
     return EXIT_CODES.FATAL_ERROR;
   }
@@ -226,10 +562,13 @@ export async function runCli(
     overwrite: Boolean(values.overwrite),
   };
 
-  // Single file vs Batch
-  if (epubFiles.length === 1 && targetInputs.length === 1 && !isRecursive) {
+  if (
+    epubFiles.length === 1 &&
+    rawInputs.length === 1 &&
+    !options.isRecursive
+  ) {
     const singleFile = epubFiles[0]!;
-    if (!isQuiet && !isJson) {
+    if (!options.isQuiet && !options.isJson) {
       log(
         `Exporting publication: ${path.basename(singleFile)} [format: ${format}]...`,
       );
@@ -237,7 +576,7 @@ export async function runCli(
 
     try {
       const results = await exportPublication(singleFile, exportOpts);
-      if (isJson) {
+      if (options.isJson) {
         log(
           JSON.stringify(
             { success: true, count: results.length, results },
@@ -245,7 +584,7 @@ export async function runCli(
             2,
           ),
         );
-      } else if (!isQuiet) {
+      } else if (!options.isQuiet) {
         for (const res of results) {
           log(
             `Exported [${res.format.toUpperCase()}]: ${res.outputPath} (${(res.byteSize / 1024).toFixed(1)} KB) in ${res.durationMs}ms`,
@@ -254,7 +593,7 @@ export async function runCli(
       }
       return EXIT_CODES.SUCCESS;
     } catch (error) {
-      if (isJson) {
+      if (options.isJson) {
         log(
           JSON.stringify(
             {
@@ -274,8 +613,7 @@ export async function runCli(
     }
   }
 
-  // Batch export
-  if (!isQuiet && !isJson) {
+  if (!options.isQuiet && !options.isJson) {
     log(
       `Starting batch export of ${epubFiles.length} publication(s) [format: ${format}]...`,
     );
@@ -284,17 +622,17 @@ export async function runCli(
   const report: BatchExportReport = await exportBatch(epubFiles, {
     ...exportOpts,
     jobs,
-    signal: io.signal,
+    signal: options.signal,
     onProgress: (done, total, file) => {
-      if (!isQuiet && !isJson) {
+      if (!options.isQuiet && !options.isJson) {
         log(`[${done}/${total}] Processed ${path.basename(file)}`);
       }
     },
   });
 
-  if (isJson) {
+  if (options.isJson) {
     log(JSON.stringify(report, null, 2));
-  } else if (!isQuiet) {
+  } else if (!options.isQuiet) {
     log("\n--- Batch Export Summary ---");
     log(`Total files:      ${report.totalFiles}`);
     log(`Successful:       ${report.successfulFiles}`);
@@ -314,11 +652,7 @@ export async function runCli(
     }
   }
 
-  if (report.failedFiles === 0) {
-    return EXIT_CODES.SUCCESS;
-  }
-  if (report.successfulFiles > 0) {
-    return EXIT_CODES.PARTIAL_FAILURE;
-  }
+  if (report.failedFiles === 0) return EXIT_CODES.SUCCESS;
+  if (report.successfulFiles > 0) return EXIT_CODES.PARTIAL_FAILURE;
   return EXIT_CODES.FATAL_ERROR;
 }

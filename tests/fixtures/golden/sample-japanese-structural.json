@@ -1,0 +1,13 @@
+{
+  "publicationType": "epub",
+  "title": "ReflowPress 日本語組版サンプル",
+  "language": "ja",
+  "identifier": "urn:uuid:sample-japanese-epub-01",
+  "direction": "rtl",
+  "readingOrderCount": 2,
+  "sections": [
+    { "index": 0, "href": "chapter1.xhtml" },
+    { "index": 1, "href": "chapter2.xhtml" }
+  ],
+  "navigationCount": 2
+}

@@ -12,15 +12,20 @@ ReflowPress builds upon the foundational contracts established in Phase 1, expan
 flowchart TD
     SOURCE[EPUB / PDF File]
 
-    subgraph INSP_SUB[Inspection & Health Pipeline]
-        INSPECTOR[Inspector<br/>implemented for EPUB]
-        HEALTH[Health Report<br/>implemented for EPUB]
+    subgraph INSP_SUB[Inspection & Quality Pipeline]
+        INSPECTOR[Inspector & Diagnostics<br/>@reflowpress/quality<br/>implemented in 0.1 & 0.8]
+        HEALTH[Health Report<br/>EPUB & PDF Quality Gates<br/>implemented in 0.8]
+    end
+
+    subgraph REPAIR_SUB[Safe Repair Subsystem]
+        PLANNER[Repair Planner<br/>@reflowpress/repair<br/>implemented in 0.8]
+        REWRITER[Canonical ZIP Rewriter<br/>Non-destructive staging<br/>implemented in 0.8]
     end
 
     subgraph CORE_SUB[Publication Core]
-        LOADER[EpubLoader<br/>implemented]
-        PUB_MODEL[Publication Model<br/>implemented]
-        NORMALIZED[NormalizedPublication<br/>implemented]
+        LOADER[EpubLoader<br/>implemented in 0.2]
+        PUB_MODEL[Publication Model<br/>implemented in 0.2]
+        NORMALIZED[NormalizedPublication<br/>implemented in 0.2]
     end
 
     subgraph CONSUMER_SUB[Application Features & Engines]
@@ -28,11 +33,11 @@ flowchart TD
         ANNOTATION[Annotation Store<br/>implemented in 0.5]
         LIBRARY[Library Catalog<br/>implemented in 0.4]
         SEARCH[Search Index<br/>implemented in 0.5]
-        EXPORT[Export Engine<br/>PDF / HTML / Markdown<br/>planned]
-        VALIDATION[Validation Gate<br/>PDF Quality Gate<br/>planned]
+        EXPORT[Export Engine<br/>PDF / HTML / Markdown<br/>implemented in 0.7]
     end
 
     SOURCE --> INSPECTOR --> HEALTH
+    HEALTH --> PLANNER --> REWRITER
     SOURCE --> LOADER --> PUB_MODEL --> NORMALIZED
 
     NORMALIZED --> READER
@@ -40,7 +45,6 @@ flowchart TD
     ANNOTATION --> LIBRARY
     NORMALIZED --> SEARCH
     NORMALIZED --> EXPORT
-    EXPORT --> VALIDATION
 ```
 
 ### Component Responsibilities
@@ -138,7 +142,7 @@ export interface NormalizedPublication {
 
 ## Package Architecture Proposal
 
-### Current Package Structure (Milestone 0.6)
+### Current Package Structure (Milestone 0.8)
 
 ```text
 packages/
@@ -149,12 +153,15 @@ packages/
   search/      - In-book full-text search engine (EPUB and PDF)
   typography/  - Standards-based typography, writing mode resolution, TCY transform
   reader/      - Reader state, navigation stepping, user settings
+  export/      - Publication export engine (PDF via Chromium, HTML, Markdown)
+  quality/     - Structured diagnostics, resource graph, EPUB/PDF quality gates
+  repair/      - Non-destructive safe repair planner, canonical ZIP rewriter, provenance
   pdf/         - PDF output contract types
   renderer/    - Renderer interface contracts
   validation/  - Validation interface contracts
 apps/
   desktop/     - Electron 33 + React 19 + Vite desktop workbench application
-  cli/         - Command-line entry point (placeholder)
+  cli/         - Headless CLI entry point (export, inspect, validate, repair)
 ```
 
 ### Future Package Architecture Proposal
@@ -495,8 +502,63 @@ flowchart TD
 4. **Transactional Atomic Writes**:
    - Output files and companion asset folders are staged in unique hidden temporary locations before atomic rename into the destination directory. Partial, truncated, or interrupted files are never left in the user's workspace.
 
-5. **Headless CLI with Standard Unix Semantics**:
-   - `reflowpress export` supports recursive directory scanning, batch worker parallelism (`--jobs <n>`), structured JSON output (`--json`), and standard exit codes (0: success, 1: partial failure, 2: fatal error).
+---
+
+## Milestone 0.8: Quality & Safe Repair Architecture
+
+Milestone 0.8 transforms ReflowPress into a Publication Quality & Repair Workbench, introducing `@reflowpress/quality` and `@reflowpress/repair` as defined in [ADR 0008: Quality and Safe Repair](adr/0008-quality-and-safe-repair.md):
+
+```mermaid
+flowchart TD
+    SOURCE[EPUB or PDF Publication] --> DIAG[Quality Inspector<br/>inspectEpubHealth / inspectPdfHealth]
+    DIAG --> REPORT[HealthReport<br/>Findings, Severity, Repairability]
+
+    REPORT --> GATE{Quality Gate Check<br/>evaluateQualityGate}
+    GATE -- Passed --> READY[Clean Publication]
+    GATE -- Issues Found --> PLANNER[Repair Planner<br/>planRepairs]
+
+    PLANNER --> WHITELIST{Safe Whitelist?}
+    WHITELIST -- Review Required / Unsafe --> USER_REVIEW[User Guidance / Flagged Findings]
+    WHITELIST -- Safe Candidate --> PREVIEWS[Repair Plan & Previews<br/>Unified diff / file actions]
+
+    PREVIEWS --> UI_CLI[Desktop HealthModal / CLI --repair]
+    UI_CLI --> EXECUTE[Repair Orchestrator<br/>executeRepair]
+
+    EXECUTE --> STAGING[Transactional Staging<br/>Canonical EPUB ZIP Rewriter]
+    STAGING --> REINSPECT[Post-Repair Re-inspection<br/>Regression Detection]
+    REINSPECT -- Regressed / Critical Left --> ABORT[Abort & Cleanup Staging]
+    REINSPECT -- Verified Clean --> COMMIT[Atomic Output: stem_repaired_ts.epub<br/>Optional .provenance.json Sidecar]
+```
+
+### Architectural Key Decisions & Safeguards:
+
+1. **Separation of Diagnostics and Mutations**:
+   - `@reflowpress/quality` is strictly read-only and pure inspection. It produces factual, reproducible `QualityFinding` objects with location, evidence, severity (`fatal`, `error`, `warning`, `info`), and repairability classifications (`safe-auto`, `review-required`, `manual-only`, `none`).
+   - `@reflowpress/repair` is the mutation orchestrator, operating exclusively on verified health reports and safe repair actions.
+
+2. **Conservative Safe Repair Whitelist**:
+   - Only unambiguous, low-risk defects are automatically planned:
+     - Missing or corrupted `mimetype` file (reconstructed with canonical `application/epub+zip` at byte offset 38, uncompressed).
+     - Missing `<container>` entry (rebuilt pointing to detected rootfile).
+     - Standard manifest `media-type` mismatches.
+     - Stray OS metadata (`.DS_Store`, `Thumbs.db`).
+   - High-risk operations (deleting unreferenced resources, inventing synthetic metadata, or stripping active DRM) are strictly excluded from automated repair.
+
+3. **Canonical EPUB ZIP Rewriting**:
+   - The canonical rewriter in `@reflowpress/repair` guarantees EPUB 3 / OCF compliance:
+     - Entry 0 is `mimetype`, uncompressed (`STORE`), with zero extra fields.
+     - Unmodified entries are copied verbatim with identical byte contents and compression.
+     - Directory entries and zip metadata are normalized.
+
+4. **Transactional Staging and Re-Inspection Gate**:
+   - Output files are assembled in temporary staging paths (`.tmp-<timestamp>`).
+   - Before finalizing, the staged archive is re-evaluated with `inspectEpubHealth`. If new errors are introduced or target issues remain unresolved, the operation aborts and staging is purged.
+   - Original source files are **never** mutated in place. Repaired publications are written to `<stem>_repaired_<YYYYMMDD-HHmmss>.epub`.
+   - An optional `.provenance.json` sidecar records applied rules, source/target hashes, and re-inspection deltas.
+
+5. **Integrated Verification in Desktop and CLI**:
+   - **Desktop UI**: `HealthModal` provides an accessible, tabbed dialog with ARIA live announcements, visual and textual severity indicators, diff previews, and safe apply actions.
+   - **Headless CLI**: `reflowpress inspect`, `reflowpress validate`, and `reflowpress repair` subcommands provide terminal-friendly Unix semantics and JSON outputs for automated pipelines.
 
 ---
 

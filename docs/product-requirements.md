@@ -72,12 +72,32 @@ To ensure absolute transparency between implemented features and planned milesto
 - Versioned atomic JSON annotation persistence (`annotations-v1.json`) with serialized queue, `fsync`, and corrupt file quarantine (`.corrupt-<timestamp>`).
 - Portable PKM annotation export (Markdown, standalone HTML, JSON) and conflict-safe JSON import.
 
+### Implemented in Milestone 0.6 (Japanese Typography & Accessibility)
+
+- `@reflowpress/typography` domain package for CSS Writing Modes, ruby formatting, kinsoku shori, and non-destructive Tate-chu-yoko (TCY).
+- Full vertical-rl layout with axis-aware navigation, column progression, and keyboard bindings.
+- WCAG 2.2 AA accessibility baseline with polite ARIA live announcements, focus trap/restore dialogs, high-contrast themes, and automated axe-core scanning.
+
+### Implemented in Milestone 0.7 (Export Workbench)
+
+- `@reflowpress/export` domain package for high-fidelity conversion of EPUB to PDF, standalone HTML, and Markdown.
+- Headless Chromium PDF rendering via Playwright with CSS Paged Media `@page` layout and Japanese typography reuse.
+- Headless CLI (`reflowpress export`) with batch conversion, worker concurrency, and deterministic timestamp naming.
+
+### Implemented in Milestone 0.8 (Quality & Repair)
+
+- `@reflowpress/quality` domain package with rule registry (25+ stable diagnostic rules), resource graph builder, EPUB container/package diagnostics, PDF health diagnostics, and baseline/reader-export quality gates.
+- `@reflowpress/repair` domain package with safe repair planner, canonical EPUB ZIP rewriter, transactional staging, regression abort, and `.provenance.json` sidecar generation.
+- Desktop Health & Repair modal (`HealthModal`) with tabbed diagnostics, diff previews, live ARIA announcements, and axe-core accessibility compliance.
+- Headless CLI subcommands: `reflowpress inspect`, `reflowpress validate`, and `reflowpress repair` (`--apply`, `--provenance`, `--rule`).
+- 3-tier golden master regression testing framework and Playwright visual regression suite.
+
 ### Not Implemented (Planned in Future Milestones)
 
-- Japanese vertical typography and accessibility baseline (Milestone 0.6)
-- EPUB to PDF conversion engine (Milestone 0.7)
-- PDF Quality Gate automated verification (Milestone 0.8)
-- Headless CLI workflow (Milestone 0.7)
+- OPDS catalog feed support (Milestone 0.9)
+- Direct e-reader device transfer (Milestone 0.9)
+- Local sync via standard cloud folders (Milestone 0.9)
+- Production cross-platform installers (Milestone 1.0)
 
 ---
 
@@ -161,14 +181,16 @@ To ensure absolute transparency between implemented features and planned milesto
 - [x] Transactional writing staging outputs in temporary files/directories before atomic rename to prevent corruption.
 - [x] Batch conversion via headless CLI (`reflowpress export ...`) with bounded worker concurrency (`--jobs <n>`), structured JSON output (`--json`), and partial failure exit codes.
 
-### Milestone 0.8: Quality & Repair (Next Priority)
+### Milestone 0.8: Quality & Repair (Complete)
 
-- [ ] Publication Health Diagnostic Suite: detailed reporting of missing assets, broken internal links, suspicious remote URLs, and malformed tags.
-- [ ] Non-destructive Safe Repair: Inspect → Explain → Preview → Repair → Verify → Undo.
-- [ ] PDF Quality Gate: programmatic assertions checking PDF openability, text layer extractability, font embedding, image presence, and page geometry.
-- [ ] Automated visual regression testing suite.
+- [x] Publication Health Diagnostic Suite: detailed reporting of missing assets, broken internal links, suspicious remote URLs, and malformed tags (`@reflowpress/quality`, 25+ stable diagnostic rules).
+- [x] Non-destructive Safe Repair: Inspect → Explain → Preview → Repair → Verify → Undo (`@reflowpress/repair`, canonical ZIP rewriter, transactional staging, regression abort, `.provenance.json`).
+- [x] PDF Quality Gate: programmatic assertions checking PDF openability, text layer extractability, font embedding, image presence, and page geometry (`BaselinePdfValidator`, `evaluateQualityGate`).
+- [x] 3-tier golden master regression testing framework and Playwright visual regression suite.
+- [x] Accessible Desktop Health & Repair UI (`HealthModal`) with live ARIA announcements, explicit textual badges, and diff previews.
+- [x] Headless CLI diagnostic subcommands (`reflowpress inspect`, `reflowpress validate`, `reflowpress repair`).
 
-### Milestone 0.9: Interoperability
+### Milestone 0.9: Interoperability (Next Priority)
 
 - [ ] OPDS catalog feed support.
 - [ ] Direct e-reader device transfer (USB/MTP).

@@ -17,10 +17,10 @@ flowchart TD
     M02 --> M03[0.3 Reader MVP<br/>COMPLETE]
     M03 --> M04[0.4 Library MVP<br/>COMPLETE]
     M04 --> M05[0.5 Reading Tools<br/>COMPLETE]
-    M05 --> M06[0.6 Japanese & Accessibility<br/>NEXT]
-    M06 --> M07[0.7 Export Workbench]
-    M07 --> M08[0.8 Quality & Repair]
-    M08 --> M09[0.9 Interoperability]
+    M05 --> M06[0.6 Japanese & Accessibility<br/>COMPLETE]
+    M06 --> M07[0.7 Export Workbench<br/>COMPLETE]
+    M07 --> M08[0.8 Quality & Repair<br/>COMPLETE]
+    M08 --> M09[0.9 Interoperability<br/>NEXT]
     M09 --> M10[1.0 Stable Release]
 ```
 
@@ -153,20 +153,28 @@ flowchart TD
 
 ### Milestone 0.8: Quality & Repair
 
-- **Status**: **Next Priority**
-- **Goal**: _Unmatched publication health diagnostics, automated repair, and PDF QA._
-- **Scope**:
-  - Full **EPUB Health Diagnostic Suite**: broken manifests, orphaned files, missing assets, remote asset warnings, malformed OPF elements.
-  - **Safe Repair Workflow**: Inspect → Explain → Preview → Non-destructive Repair → Verify → Undo.
-  - **PDF Quality Gate**: Automated programmatic checks for PDF openability, extractable text layer integrity, embedded fonts, image presence, and page geometry.
-  - Visual regression testing framework for layout engines.
-  - Golden master testing pipeline for regression safety.
+- **Status**: **Complete**
+- **Goal**: _Transform ReflowPress into a publication QA workbench with structured diagnostics, evidence, preview-first safe repair, and automated output quality verification._
+- **Deliverables**:
+  - `@reflowpress/quality`: Pure TypeScript diagnostic rule engine for EPUB and PDF publications with zero external runtime dependencies.
+  - Granular stable rule catalog (`EPUB-CONTAINER-*`, `EPUB-PACKAGE-*`, `EPUB-MANIFEST-*`, `EPUB-SPINE-*`, `EPUB-NAV-*`, `EPUB-RESOURCE-*`, `EPUB-META-*`, `EPUB-SEC-*`, `PDF-STRUCT-*`, `PDF-TEXT-*`, `PDF-GEOM-*`, `PDF-IMAGE-*`, `PDF-FONT-*`).
+  - Full resource reference graph analysis identifying unmanifested orphan files and broken internal hyperlinks.
+  - PDF Quality Gate evaluating openability, extractable text layers, scanned document detection, page geometry bounds, image presence, and font embedding boundary disclaimers against configurable profiles (`baseline`, `reader-export`).
+  - `@reflowpress/repair`: Non-destructive safe repair engine writing to `<stem>_repaired_<timestamp>.epub`, strictly preserving untouched entries bit-for-bit.
+  - Safe repair actions: uncompressed canonical `mimetype` restoration at offset 38, manifest media-type normalization, and standard `container.xml` creation.
+  - Pre/post re-inspection verification aborting and cleaning up temporary staging files if regressions are introduced.
+  - `.provenance.json` sidecar generation detailing source and output SHA-256 hashes and applied rule IDs.
+  - Headless CLI subcommands: `reflowpress inspect`, `reflowpress validate`, and `reflowpress repair` (`--apply`).
+  - Desktop Workbench Health & Safe Repair modal with WCAG 2.2 AA accessibility, ARIA live announcements, explicit textual severity badges, and preview diffs.
+  - 3-Tier Golden Master Regression Framework (structural JSON, textual plain-text, and Playwright visual screenshot comparisons with `pnpm test:visual:update`).
+  - Architectural documentation: [ADR 0008: Quality Diagnostic Engine, Safe Repair, and Output Quality Gate](adr/0008-quality-and-safe-repair.md), [Diagnostic Rule Catalog](quality-rules.md), [Safe Repair Policy](repair-policy.md).
+  - Automated test suite: 167 unit tests across 23 suites + 26 Playwright E2E tests (100% pass rate).
 
 ---
 
 ### Milestone 0.9: Interoperability
 
-- **Status**: Planned
+- **Status**: **Next Priority**
 - **Goal**: _Seamless data portability across reading hardware and services._
 - **Scope**:
   - OPDS catalog feed support (local catalog server and remote client).

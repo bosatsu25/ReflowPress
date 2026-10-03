@@ -14,7 +14,9 @@
     "test": "vitest run",
     "test:cli": "vitest run tests/unit/cli.test.ts && playwright test tests/e2e/export-cli.spec.ts",
     "build": "tsc -b && pnpm --filter @reflowpress/desktop build",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:visual": "playwright test tests/e2e/visual-regression.spec.ts",
+    "test:visual:update": "playwright test tests/e2e/visual-regression.spec.ts --update-snapshots"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

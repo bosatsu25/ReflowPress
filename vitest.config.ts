@@ -49,6 +49,14 @@ export default defineConfig({
         __dirname,
         "packages/validation/src/index.ts",
       ),
+      "@reflowpress/quality": path.resolve(
+        __dirname,
+        "packages/quality/src/index.ts",
+      ),
+      "@reflowpress/repair": path.resolve(
+        __dirname,
+        "packages/repair/src/index.ts",
+      ),
     },
   },
   test: {

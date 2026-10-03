@@ -9,6 +9,8 @@
     { "path": "../../packages/core" },
     { "path": "../../packages/epub" },
     { "path": "../../packages/export" },
-    { "path": "../../packages/pdf" }
+    { "path": "../../packages/pdf" },
+    { "path": "../../packages/quality" },
+    { "path": "../../packages/repair" }
   ]
 }

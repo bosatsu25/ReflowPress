@@ -42,6 +42,7 @@ import { Header } from "./components/Header.js";
 import { Footer } from "./components/Footer.js";
 import { TocDrawer } from "./components/TocDrawer.js";
 import { SettingsModal } from "./components/SettingsModal.js";
+import { HealthModal } from "./components/HealthModal.js";
 import { EmptyState } from "./components/EmptyState.js";
 import { ErrorBanner } from "./components/ErrorBanner.js";
 import { LibraryView } from "./components/LibraryView.js";
@@ -105,6 +106,8 @@ export const App: React.FC = () => {
   // UI state
   const [tocOpen, setTocOpen] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [healthModalOpen, setHealthModalOpen] = useState<boolean>(false);
+  const [currentFilePath, setCurrentFilePath] = useState<string>("");
   const [toolsDrawerOpen, setToolsDrawerOpen] = useState<boolean>(false);
   const [activeToolsTab, setActiveToolsTab] = useState<
     "search" | "bookmarks" | "highlights" | "notes"
@@ -481,6 +484,7 @@ export const App: React.FC = () => {
     async (filePath: string) => {
       setIsLoading(true);
       setErrorMessage(null);
+      setCurrentFilePath(filePath);
       setLoadingMessage(`Loading ${filePath.split(/[/\\]/).pop()}...`);
 
       try {
@@ -1045,6 +1049,7 @@ export const App: React.FC = () => {
         }}
         onQuickBookmark={handleQuickBookmark}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenHealth={() => setHealthModalOpen(true)}
         onCloseDocument={handleCloseDocument}
         onSwitchToLibrary={() => setViewMode("library")}
         onSwitchToReader={() => setViewMode("reader")}
@@ -1232,6 +1237,17 @@ export const App: React.FC = () => {
         settings={settings}
         onClose={() => setSettingsOpen(false)}
         onUpdateSettings={handleUpdateSettings}
+      />
+
+      {/* Health & Safe Repair Modal */}
+      <HealthModal
+        isOpen={healthModalOpen}
+        publicationPath={currentFilePath}
+        onClose={() => setHealthModalOpen(false)}
+        onRepaired={(newPath) => {
+          setHealthModalOpen(false);
+          loadFile(newPath);
+        }}
       />
 
       {/* Screen Reader Live Status Region */}

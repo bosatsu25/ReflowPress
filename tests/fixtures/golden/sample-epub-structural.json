@@ -1,0 +1,12 @@
+{
+  "publicationType": "epub",
+  "title": "ReflowPress Sample Book",
+  "language": "en",
+  "identifier": "urn:uuid:sample-epub-01",
+  "readingOrderCount": 2,
+  "sections": [
+    { "index": 0, "href": "chapter1.xhtml" },
+    { "index": 1, "href": "chapter2.xhtml" }
+  ],
+  "navigationCount": 2
+}

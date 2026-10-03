@@ -17,6 +17,8 @@
     "@reflowpress/epub": "workspace:*",
     "@reflowpress/library": "workspace:*",
     "@reflowpress/reader": "workspace:*",
+    "@reflowpress/quality": "workspace:*",
+    "@reflowpress/repair": "workspace:*",
     "@reflowpress/search": "workspace:*",
     "@reflowpress/typography": "workspace:*",
     "pdfjs-dist": "^4.10.38",

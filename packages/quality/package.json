@@ -1,0 +1,29 @@
+{
+  "name": "@reflowpress/quality",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Publication diagnostic rule engine, health reporting, and PDF quality gates for ReflowPress",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true });\""
+  },
+  "dependencies": {
+    "@reflowpress/core": "workspace:*",
+    "@reflowpress/epub": "workspace:*",
+    "@reflowpress/pdf": "workspace:*",
+    "@xmldom/xmldom": "^0.9.8",
+    "pdfjs-dist": "^4.10.38",
+    "yauzl": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/yauzl": "^3.4.0",
+    "typescript": "^5.5.4"
+  }
+}
