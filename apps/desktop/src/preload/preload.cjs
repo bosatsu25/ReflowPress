@@ -102,6 +102,12 @@ const bridge = {
   showOpenAnnotationFileDialog() {
     return ipcRenderer.invoke("dialog:open-annotation-file");
   },
+  inspectPublication(filePath) {
+    return ipcRenderer.invoke("publication:inspect", filePath);
+  },
+  repairPublication(filePath, options) {
+    return ipcRenderer.invoke("publication:repair", filePath, options);
+  },
 };
 
 contextBridge.exposeInMainWorld("reflowPressDesktop", bridge);

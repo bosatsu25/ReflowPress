@@ -11,8 +11,8 @@ ReflowPress bridges document reading, library organization, publication health i
 ## Current Status & Implementation Facts
 
 > [!IMPORTANT]
-> **ReflowPress is in active foundation development.**
-> Do not mistake planned functionality for implemented features. The desktop reader GUI (Milestone 0.3), Library catalog (Milestone 0.4), Reading Tools (Milestone 0.5), Japanese Typography & Accessibility (Milestone 0.6), and Export Workbench (Milestone 0.7) are **implemented**. Comprehensive repair tools and full PDF/A Quality Gates (Milestone 0.8) are planned.
+> **ReflowPress Milestone 0.8 — Quality & Repair is Complete.**
+> The desktop reader GUI (0.3), Library catalog (0.4), Reading Tools (0.5), Japanese Typography & Accessibility (0.6), Export Workbench (0.7), and Quality Diagnostic Suite with Safe Repair (0.8) are **implemented**. Interoperability features (Milestone 0.9) are planned.
 
 ### Current State (`main`)
 
@@ -23,14 +23,15 @@ ReflowPress bridges document reading, library organization, publication health i
 - **Milestone 0.5 (Reading Tools)**: **Complete** (Implements `@reflowpress/annotations` domain package, `@reflowpress/search` in-book search engine for EPUB and PDF, W3C Web Annotation compliant hybrid locators, multi-color text highlights, bookmarks, margin notes, versioned atomic JSON annotation persistence with corrupt quarantine, portable Markdown/HTML/JSON export and import, drawer UI, floating selection toolbar, hotkeys, and Playwright desktop E2E tests).
 - **Milestone 0.6 (Japanese Typography & Accessibility)**: **Complete** (Implements `@reflowpress/typography` domain package, Chromium standards-based CSS Writing Modes (`vertical-rl`), strict kinsoku line breaking, native `<ruby>` presentation, Tate-chu-yoko numeral alignment with non-destructive auto-assist, axis-aware keyboard and column progression, WCAG 2.2 AA accessibility baseline with full keyboard focus management, focus trap and restoration for dialogs, polite ARIA live announcements, high contrast and forced-colors support, reduced motion preferences, automated axe-core accessibility regression testing, and Playwright desktop E2E tests).
 - **Milestone 0.7 (Export Workbench)**: **Complete** (Implements `@reflowpress/export`, `@reflowpress/cli`, ADR 0007 Playwright Chromium headless rendering with strict network offline isolation, standalone HTML export with Data URL asset inlining, GFM Markdown export with YAML frontmatter and ruby `base（reading）` transliteration, deterministic timestamp naming `<stem>_<YYYYMMDD-HHmmss>.<ext>`, collision resolution `-001`..`-999`, transactional atomic writing, bounded concurrency batch exporting, headless CLI `reflowpress export`, and Playwright CLI E2E tests).
-- **EPUB Inspector (`inspectEpub`)**: **Implemented** (Parses ZIP container, `container.xml`, and OPF package document; extracts metadata, manifest, and spine; enforces path safety and resource limits).
+- **Milestone 0.8 (Quality & Repair)**: **Complete** (Implements `@reflowpress/quality` diagnostic rule engine for EPUB and PDF, stable rule catalog `EPUB-*` and `PDF-*`, deterministic sorting and deduplication, PDF Quality Gate evaluation profiles `baseline` and `reader-export`, `@reflowpress/repair` safe non-destructive repair engine with canonical uncompressed mimetype rewriting, manifest media-type correction, standard `container.xml` creation, transactional staging with pre/post re-inspection verification, `.provenance.json` sidecar generation, headless CLI subcommands `reflowpress inspect`, `validate`, `repair`, Desktop Health & Safe Repair modal with WCAG 2.2 accessibility, 3-Tier Golden Master regression framework, 167 unit tests, and 26 Playwright E2E tests).
 - **Publication Core (`loadEpub`, `EpubLoader`)**: **Implemented** (`NormalizedPublication` model, reading order, navigation hierarchy, metadata, auxiliary assets).
 - **Desktop Reader MVP**: **Implemented** (EPUB/PDF viewing, TOC, reading positions, themes, typography settings).
 - **Library Catalog & Collections**: **Implemented** (Recursive scanning, cover cache, collections, shelves, search, tags).
 - **Reading Tools (Search, Notes, Annotations)**: **Implemented** (In-book search, bookmarks, highlights, notes, portable PKM export/import).
 - **Japanese Typography & Accessibility**: **Implemented (Milestone 0.6)**.
 - **Export Workbench (EPUB to PDF/HTML/MD & Headless CLI)**: **Implemented (Milestone 0.7)**.
-- **Publication Repair & PDF Quality Gate**: **Next (Milestone 0.8)**.
+- **Quality Diagnostic Suite & Safe Repair**: **Implemented (Milestone 0.8)**.
+- **Interoperability (OPDS, Cloud Sync, Device Transfer)**: **Next (Milestone 0.9)**.
 
 ---
 

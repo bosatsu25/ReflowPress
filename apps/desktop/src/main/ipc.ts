@@ -2,6 +2,8 @@ import { ipcMain, type BrowserWindow } from "electron";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { loadEpub } from "@reflowpress/epub";
+import { inspectEpubHealth, inspectPdfHealth } from "@reflowpress/quality";
+import { planRepairs, executeRepair } from "@reflowpress/repair";
 import type { LoadedPublicationResult } from "../preload/types.js";
 import type { SavedReadingPosition } from "@reflowpress/reader";
 import {
@@ -287,6 +289,37 @@ export function registerIpcHandlers(
     "dialog:open-annotation-file",
     async (): Promise<string | null> => {
       return showOpenAnnotationFileDialog(window);
+    },
+  );
+
+  ipcMain.handle("publication:inspect", async (_event, filePath: string) => {
+    if (filePath.toLowerCase().endsWith(".pdf")) {
+      const bytes = await readFile(filePath);
+      return inspectPdfHealth(bytes, filePath);
+    }
+    return inspectEpubHealth(filePath);
+  });
+
+  ipcMain.handle(
+    "publication:repair",
+    async (
+      _event,
+      filePath: string,
+      options?: { apply?: boolean; ruleId?: string; outputDir?: string },
+    ) => {
+      const report = await inspectEpubHealth(filePath);
+      const { plan, preview } = planRepairs(report, {
+        specificRuleIds: options?.ruleId ? [options.ruleId] : undefined,
+      });
+
+      if (!options?.apply) {
+        return { plan, preview };
+      }
+
+      return executeRepair(filePath, plan, {
+        outputDir: options?.outputDir,
+        writeProvenance: true,
+      });
     },
   );
 }

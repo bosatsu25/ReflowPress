@@ -1,28 +1,28 @@
 {
-  "name": "@reflowpress/cli",
+  "name": "@reflowpress/repair",
   "version": "0.1.0",
   "private": true,
-  "description": "Headless command-line interface for ReflowPress Export Workbench",
+  "description": "Safe, non-destructive publication repair engine with re-inspection verification for ReflowPress",
   "type": "module",
-  "bin": {
-    "reflowpress": "./dist/cli.js"
-  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "scripts": {
     "build": "tsc -b",
-    "clean": "node -e \"const fs = require('node:fs'); fs.rmSync('dist', { recursive: true, force: true });\""
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true });\""
   },
   "dependencies": {
     "@reflowpress/core": "workspace:*",
     "@reflowpress/epub": "workspace:*",
-    "@reflowpress/export": "workspace:*",
-    "@reflowpress/pdf": "workspace:*",
     "@reflowpress/quality": "workspace:*",
-    "@reflowpress/repair": "workspace:*"
+    "@xmldom/xmldom": "^0.9.8",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
+    "@types/yauzl": "^3.4.0",
     "typescript": "^5.5.4"
   }
 }

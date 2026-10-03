@@ -18,6 +18,7 @@ export interface HeaderProps {
   onCloseDocument: () => void;
   onSwitchToLibrary?: () => void;
   onSwitchToReader?: () => void;
+  onOpenHealth?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,6 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
   onCloseDocument,
   onSwitchToLibrary,
   onSwitchToReader,
+  onOpenHealth,
 }) => {
   const isDark = theme === "dark";
   const isSepia = theme === "sepia";
@@ -272,6 +274,30 @@ export const Header: React.FC<HeaderProps> = ({
         >
           Open...
         </button>
+
+        {hasDocument && onOpenHealth && (
+          <button
+            type="button"
+            onClick={onOpenHealth}
+            aria-label="Publication Health and Safe Repair"
+            title="Publication Health & Safe Repair Diagnostics"
+            style={{
+              padding: "6px 10px",
+              cursor: "pointer",
+              border: `1px solid ${borderColor}`,
+              borderRadius: "4px",
+              background: "transparent",
+              color: textColor,
+              fontSize: "13px",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <span>🩺</span>
+            <span>Health</span>
+          </button>
+        )}
 
         <button
           type="button"

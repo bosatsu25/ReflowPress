@@ -59,6 +59,12 @@ importers:
       '@reflowpress/pdf':
         specifier: workspace:*
         version: link:../../packages/pdf
+      '@reflowpress/quality':
+        specifier: workspace:*
+        version: link:../../packages/quality
+      '@reflowpress/repair':
+        specifier: workspace:*
+        version: link:../../packages/repair
     devDependencies:
       '@types/node':
         specifier: ^20.14.10
@@ -81,9 +87,15 @@ importers:
       '@reflowpress/library':
         specifier: workspace:*
         version: link:../../packages/library
+      '@reflowpress/quality':
+        specifier: workspace:*
+        version: link:../../packages/quality
       '@reflowpress/reader':
         specifier: workspace:*
         version: link:../../packages/reader
+      '@reflowpress/repair':
+        specifier: workspace:*
+        version: link:../../packages/repair
       '@reflowpress/search':
         specifier: workspace:*
         version: link:../../packages/search
@@ -179,6 +191,37 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/quality:
+    dependencies:
+      '@reflowpress/core':
+        specifier: workspace:*
+        version: link:../core
+      '@reflowpress/epub':
+        specifier: workspace:*
+        version: link:../epub
+      '@reflowpress/pdf':
+        specifier: workspace:*
+        version: link:../pdf
+      '@xmldom/xmldom':
+        specifier: ^0.9.8
+        version: 0.9.12
+      pdfjs-dist:
+        specifier: ^4.10.38
+        version: 4.10.38
+      yauzl:
+        specifier: ^3.4.0
+        version: 3.4.0
+    devDependencies:
+      '@types/node':
+        specifier: ^20.14.10
+        version: 20.19.43
+      '@types/yauzl':
+        specifier: ^3.4.0
+        version: 3.4.0
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+
   packages/reader:
     dependencies:
       '@reflowpress/core':
@@ -199,6 +242,34 @@ importers:
       playwright:
         specifier: ^1.55.0
         version: 1.63.0
+
+  packages/repair:
+    dependencies:
+      '@reflowpress/core':
+        specifier: workspace:*
+        version: link:../core
+      '@reflowpress/epub':
+        specifier: workspace:*
+        version: link:../epub
+      '@reflowpress/quality':
+        specifier: workspace:*
+        version: link:../quality
+      '@xmldom/xmldom':
+        specifier: ^0.9.8
+        version: 0.9.12
+      yauzl:
+        specifier: ^3.4.0
+        version: 3.4.0
+    devDependencies:
+      '@types/node':
+        specifier: ^20.14.10
+        version: 20.19.43
+      '@types/yauzl':
+        specifier: ^3.4.0
+        version: 3.4.0
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
 
   packages/search:
     dependencies:

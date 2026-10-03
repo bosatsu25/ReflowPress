@@ -12,6 +12,8 @@
     { "path": "./packages/search" },
     { "path": "./packages/typography" },
     { "path": "./packages/validation" },
+    { "path": "./packages/quality" },
+    { "path": "./packages/repair" },
     { "path": "./apps/cli" }
   ]
 }

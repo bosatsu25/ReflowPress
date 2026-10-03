@@ -10,6 +10,8 @@ import type {
   PublicationIdentity,
   ImportReport,
 } from "@reflowpress/annotations";
+import type { HealthReport } from "@reflowpress/quality";
+import type { RepairResult } from "@reflowpress/repair";
 
 export interface LoadedPublicationResult {
   readonly kind: "epub" | "pdf";
@@ -75,6 +77,12 @@ export interface DesktopBridge {
     filters: Array<{ name: string; extensions: string[] }>;
   }): Promise<string | null>;
   showOpenAnnotationFileDialog(): Promise<string | null>;
+  // Quality & Safe Repair API
+  inspectPublication(filePath: string): Promise<HealthReport>;
+  repairPublication(
+    filePath: string,
+    options?: { apply?: boolean; ruleId?: string; outputDir?: string },
+  ): Promise<RepairResult>;
 }
 
 declare global {

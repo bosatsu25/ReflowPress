@@ -18,6 +18,8 @@
       "@reflowpress/search": ["./packages/search/src/index.ts"],
       "@reflowpress/typography": ["./packages/typography/src/index.ts"],
       "@reflowpress/validation": ["./packages/validation/src/index.ts"],
+      "@reflowpress/quality": ["./packages/quality/src/index.ts"],
+      "@reflowpress/repair": ["./packages/repair/src/index.ts"],
       "@reflowpress/cli": ["./apps/cli/src/index.ts"]
     }
   },
