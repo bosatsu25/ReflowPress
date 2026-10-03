@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerIpcHandlers } from "./ipc.js";
 import { ReadingPositionStore } from "./reading-position-store.js";
+import { JsonLibraryRepository } from "./library-repository.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,8 +54,26 @@ async function createWindow(): Promise<BrowserWindow> {
     "reader-state.json",
   );
   const positionStore = new ReadingPositionStore(positionStorePath);
+
+  const libraryStorePath = path.join(
+    app.getPath("userData"),
+    "library-v1.json",
+  );
+  const libraryRepo = new JsonLibraryRepository(libraryStorePath);
+  const coversDir = path.join(
+    app.getPath("userData"),
+    "library-cache",
+    "covers",
+  );
+
   const initialFile = parseInitialFileArgument();
-  registerIpcHandlers(window, positionStore, initialFile);
+  registerIpcHandlers(
+    window,
+    positionStore,
+    libraryRepo,
+    coversDir,
+    initialFile,
+  );
 
   // Load renderer
   const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;

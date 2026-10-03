@@ -26,7 +26,7 @@ flowchart TD
     subgraph CONSUMER_SUB[Application Features & Engines]
         READER[Reader Engine<br/>implemented in 0.3]
         ANNOTATION[Annotation Store<br/>planned]
-        LIBRARY[Library Catalog<br/>planned]
+        LIBRARY[Library Catalog<br/>implemented in 0.4]
         SEARCH[Search Index<br/>planned]
         EXPORT[Export Engine<br/>PDF / HTML / Markdown<br/>planned]
         VALIDATION[Validation Gate<br/>PDF Quality Gate<br/>planned]
@@ -257,6 +257,60 @@ flowchart TD
 4. **Atomic Reading Position Persistence**:
    - `ReadingPositionStore` persists active reading positions (section href, progress percentage, PDF page, zoom) to a localized JSON file (`reader-state.json`).
    - Uses write-to-temp-file and atomic rename semantics to prevent corruption during unexpected shutdowns. Restores position automatically upon reopening.
+
+---
+
+## Library Subsystem & Catalog Persistence (Milestone 0.4)
+
+Milestone 0.4 integrates a local-first publication catalog into the desktop workbench, enabling multi-book management, fast search, custom collections, and cover extraction.
+
+```mermaid
+flowchart TD
+    UI[Library Workbench UI<br/>Grid, List, Search, Shelves]
+    BRIDGE[Desktop IPC Bridge<br/>reflowPressDesktop.library]
+    IPC[Main Process Dispatcher<br/>apps/desktop/src/main/ipc.ts]
+
+    subgraph DOMAIN[packages/library — Pure Domain Logic]
+        MODELS[Models: LibraryBook, LibraryCatalog, Collection, Tag]
+        OPERATIONS[Pure Operations: filterBooks, sortBooks, manageCollections]
+        REPO_IF[LibraryRepository Interface]
+    end
+
+    subgraph MAIN_PERSIST[apps/desktop/src/main — Persistence & Scanning]
+        JSON_REPO[JsonLibraryRepository<br/>library-v1.json<br/>Atomic write & Corrupt Quarantine]
+        SCANNER[LibraryScanner<br/>Recursive walk, mtime check, SHA-256 ID]
+        COVERS[Cover Cache<br/>userData/library-cache/covers/]
+    end
+
+    UI --> BRIDGE --> IPC
+    IPC --> OPERATIONS
+    IPC --> JSON_REPO
+    IPC --> SCANNER
+    JSON_REPO -. implements .-> REPO_IF
+    SCANNER --> COVERS
+```
+
+### Architectural Key Decisions & Safeguards:
+
+1. **Versioned Atomic JSON Persistence (`library-v1.json`)**:
+   - Implemented via `JsonLibraryRepository` adhering to the `LibraryRepository` domain interface.
+   - Durability guaranteed by writing to `.tmp-<timestamp>`, syncing to disk via `fsync`, and executing an atomic rename.
+   - **Corrupt Quarantine**: Malformed or unreadable catalogs are automatically backed up to `.corrupt-<timestamp>` and a fresh valid catalog (`schemaVersion: 1`) is initialized with warnings.
+
+2. **Recursive Scanner & Incremental Indexing**:
+   - `LibraryScanner` walks local directory trees finding `.epub` and `.pdf` files.
+   - Computes deterministic SHA-256 IDs based on normalized canonical file paths.
+   - Records `fileSizeBytes` and `modifiedTimeMs`. Re-scans compare disk stats and skip re-parsing unchanged books, guaranteeing high scan performance on large directories.
+
+3. **Safe Cover Extraction & Caching**:
+   - Extracts EPUB cover images from archive resources and caches them to `userData/library-cache/covers/<id>.<ext>`.
+   - Desktop bridge exposes `readCoverImage` returning base64 data URIs, preserving complete Electron renderer sandbox isolation (`sandbox: true`, `nodeIntegration: false`).
+
+4. **Multi-Criteria Filtering & Organization**:
+   - Multi-field search across title, author, publisher, and tags.
+   - Format filtering (`all`, `epub`, `pdf`), custom user shelves/collections, and sorting (recently added, title, author, last opened).
+   - Seamless bidirectional transition between Library catalog and Reader MVP.
+   - Full rationale documented in [ADR 0004: Library Persistence Architecture](adr/0004-library-persistence.md).
 
 ---
 

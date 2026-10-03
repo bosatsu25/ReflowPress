@@ -46,7 +46,7 @@ To ensure absolute transparency between implemented features and planned milesto
 - `Renderer` & `VivliostyleRenderer` (renderer interface contracts)
 - `PdfDocument` & `PdfValidator` (PDF output and validation contracts)
 
-### Implemented in Milestone 0.3
+### Implemented in Milestone 0.3 (Reader MVP)
 
 - EPUB reader interface & reflowable layout engine (`@reflowpress/reader`, `@reflowpress/desktop`)
 - Native PDF reader interface (`pdfjs-dist`)
@@ -54,9 +54,17 @@ To ensure absolute transparency between implemented features and planned milesto
 - Table of Contents navigation drawer & keyboard page turning
 - Reading position persistence (`reader-state.json`)
 
+### Implemented in Milestone 0.4 (Library MVP)
+
+- `@reflowpress/library` domain package for catalog, filtering, sorting, collections, tags, and repository contract.
+- Recursive directory scanning and incremental indexing with stable SHA-256 book identity.
+- Cover extraction from EPUB archives and thumbnail caching in `userData/library-cache/covers/`.
+- Versioned atomic JSON catalog persistence (`library-v1.json`) with temporary file write, `fsync`, and corrupt file quarantine (`.corrupt-<timestamp>`).
+- Desktop Workbench Library view with responsive Grid and List layouts, multi-field search, collection/shelf management, and format categories.
+- Round-trip navigation between Library view and Reader MVP.
+
 ### Not Implemented (Planned in Future Milestones)
 
-- Library catalog & collection management (Milestone 0.4)
 - Full-text search engine (Milestone 0.5)
 - Bookmarks, highlights, and note annotations (Milestone 0.5)
 - Portable annotation export (JSON, Markdown, HTML) (Milestone 0.5)
@@ -106,15 +114,15 @@ To ensure absolute transparency between implemented features and planned milesto
 - [x] Support Light, Dark, and Sepia reading themes.
 - [x] Persist the last read location across app restarts.
 
-### Milestone 0.4: Library MVP (Next Priority)
+### Milestone 0.4: Library MVP (Complete)
 
-- [ ] Scan local directories for EPUB and PDF publications.
-- [ ] Extract and cache book covers and Dublin Core metadata.
-- [ ] Organize publications into user-defined collections, tags, and custom shelves.
-- [ ] Provide real-time sorting (title, author, recently read, date added) and filtering.
-- [ ] Store library catalog locally in an embedded, zero-config database.
+- [x] Scan local directories for EPUB and PDF publications.
+- [x] Extract and cache book covers and Dublin Core metadata.
+- [x] Organize publications into user-defined collections, tags, and custom shelves.
+- [x] Provide real-time sorting (title, author, recently read, date added) and filtering.
+- [x] Store library catalog locally in an embedded, zero-config, versioned atomic JSON repository with corrupt file quarantine.
 
-### Milestone 0.5: Reading Tools
+### Milestone 0.5: Reading Tools (Next Priority)
 
 - [ ] Full-text search within the open publication with highlighted search hit navigation.
 - [ ] Add, view, and delete local bookmarks.

@@ -9,6 +9,7 @@
     "paths": {
       "@reflowpress/core": ["./packages/core/src/index.ts"],
       "@reflowpress/epub": ["./packages/epub/src/index.ts"],
+      "@reflowpress/library": ["./packages/library/src/index.ts"],
       "@reflowpress/reader": ["./packages/reader/src/index.ts"],
       "@reflowpress/renderer": ["./packages/renderer/src/index.ts"],
       "@reflowpress/pdf": ["./packages/pdf/src/index.ts"],

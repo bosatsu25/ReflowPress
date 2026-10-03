@@ -19,11 +19,12 @@ ReflowPress bridges document reading, library organization, publication health i
 - **Milestone 0.1 (Foundation)**: **Complete**
 - **Milestone 0.2 (Publication Core)**: **Complete** (Implements `EpubLoader` & `loadEpub`, shared archive parser, EPUB 2/3 navigation normalization, safe XHTML content extraction, auxiliary resources loading, resource boundaries, and DRM detection; verified by 36 unit tests).
 - **Milestone 0.3 (Reader MVP)**: **Complete** (Implements `@reflowpress/reader` and `@reflowpress/desktop` application shell with Electron 33, React 19, Vite, PDF.js, reflowable EPUB iframe isolation, XHTML sanitizer, native PDF viewing, TOC drawer, keyboard/page stepping, Light/Dark/Sepia themes, typography controls, atomic reading position persistence, and Playwright desktop E2E tests).
+- **Milestone 0.4 (Library MVP)**: **Complete** (Implements `@reflowpress/library` domain package, recursive local directory scanner with incremental indexing, versioned atomic JSON catalog persistence with corrupt file quarantine, EPUB cover extraction and caching, Grid/List catalog views, multi-field search, collection/shelf organization, and Playwright desktop E2E tests).
 - **EPUB Inspector (`inspectEpub`)**: **Implemented** (Parses ZIP container, `container.xml`, and OPF package document; extracts metadata, manifest, and spine; enforces path safety and resource limits).
 - **Publication Core (`loadEpub`, `EpubLoader`)**: **Implemented** (`NormalizedPublication` model, reading order, navigation hierarchy, metadata, auxiliary assets).
 - **Desktop Reader MVP**: **Implemented** (EPUB/PDF viewing, TOC, reading positions, themes, typography settings).
-- **Library Catalog & Collections**: **Next (Milestone 0.4)**.
-- **Reading Tools (Search, Notes, Annotations)**: **Planned (Milestone 0.5)**.
+- **Library Catalog & Collections**: **Implemented** (Recursive scanning, cover cache, collections, shelves, search, tags).
+- **Reading Tools (Search, Notes, Annotations)**: **Next (Milestone 0.5)**.
 - **Japanese Typography & Accessibility**: **Planned (Milestone 0.6)**.
 - **Export Workbench (EPUB to PDF/HTML/MD)**: **Planned (Milestone 0.7)**.
 - **Publication Repair & PDF Quality Gate**: **Planned (Milestone 0.8)**.
@@ -134,8 +135,8 @@ Read the complete [Product Vision](docs/product-vision.md) and [ADE Compatibilit
 | **0.1 Foundation**       | Monorepo, contracts, CI, and Phase 1 EPUB Inspector                           | **Complete** |
 | **0.2 Publication Core** | EPUB Loader, resources, reading order, navigation, normalization              | **Complete** |
 | **0.3 Reader MVP**       | Reflowable EPUB rendering, PDF viewing, TOC, reading position, themes         | **Complete** |
-| **0.4 Library MVP**      | Local directory scan, covers, metadata catalog, collections, sorting          | **Next**     |
-| **0.5 Reading Tools**    | In-book search, bookmarks, highlights, notes, portable annotation export      | Planned      |
+| **0.4 Library MVP**      | Local directory scan, covers, metadata catalog, collections, sorting          | **Complete** |
+| **0.5 Reading Tools**    | In-book search, bookmarks, highlights, notes, portable annotation export      | **Next**     |
 | **0.6 Japanese & A11y**  | Vertical Japanese (`vertical-rl`), ruby, kinsoku, keyboard nav, screen-reader | Planned      |
 | **0.7 Export Workbench** | EPUB to PDF (timestamp naming), HTML, Markdown, batch CLI                     | Planned      |
 | **0.8 Quality & Repair** | Diagnostic health suite, non-destructive safe repair, PDF Quality Gate        | Planned      |
@@ -146,7 +147,7 @@ Read the full milestone descriptions in [docs/roadmap.md](docs/roadmap.md).
 
 ---
 
-## Running the Desktop Reader
+## Running the Desktop Workbench
 
 Build the monorepo and launch the Electron application:
 
@@ -184,3 +185,4 @@ pnpm test:e2e
 - [ADR 0001: Layered Publication Pipeline](docs/adr/0001-layered-publication-pipeline.md)
 - [ADR 0002: Product Reboot to Local-First Ebook Workbench](docs/adr/0002-product-reboot-workbench.md)
 - [ADR 0003: Desktop Reader Runtime (Electron + React + Vite + PDF.js)](docs/adr/0003-desktop-reader-runtime.md)
+- [ADR 0004: Library Persistence Architecture and Repository Abstraction](docs/adr/0004-library-persistence.md)

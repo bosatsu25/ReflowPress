@@ -4,12 +4,31 @@ import path from "node:path";
 import { loadEpub } from "@reflowpress/epub";
 import type { LoadedPublicationResult } from "../preload/types.js";
 import type { SavedReadingPosition } from "@reflowpress/reader";
-import { showOpenFileNativeDialog } from "./file-dialog.js";
+import {
+  type LibraryBook,
+  type LibraryCatalog,
+  type ScanResult,
+  removeBookFromCatalog,
+  updateBookInCatalog,
+  createCollection,
+  deleteCollection,
+  addBookToCollection,
+  removeBookFromCollection,
+} from "@reflowpress/library";
+import {
+  showOpenFileNativeDialog,
+  showOpenMultipleFilesNativeDialog,
+  showOpenDirectoryNativeDialog,
+} from "./file-dialog.js";
 import type { ReadingPositionStore } from "./reading-position-store.js";
+import type { JsonLibraryRepository } from "./library-repository.js";
+import { scanLibraryPaths } from "./library-scanner.js";
 
 export function registerIpcHandlers(
   window: BrowserWindow,
   positionStore: ReadingPositionStore,
+  libraryRepo: JsonLibraryRepository,
+  coversDir: string,
   initialFilePath: string | null = null,
 ): void {
   ipcMain.handle("app:get-initial-file", async () => {
@@ -18,6 +37,14 @@ export function registerIpcHandlers(
 
   ipcMain.handle("dialog:open-file", async () => {
     return showOpenFileNativeDialog(window);
+  });
+
+  ipcMain.handle("dialog:open-multiple-files", async () => {
+    return showOpenMultipleFilesNativeDialog(window);
+  });
+
+  ipcMain.handle("dialog:open-directory", async () => {
+    return showOpenDirectoryNativeDialog(window);
   });
 
   ipcMain.handle(
@@ -70,6 +97,126 @@ export function registerIpcHandlers(
     "position:set",
     async (_event, position: SavedReadingPosition) => {
       await positionStore.savePosition(position);
+    },
+  );
+
+  // Library Handlers
+  ipcMain.handle("library:load", async () => {
+    const catalog = await libraryRepo.load();
+    const verified = await libraryRepo.verifyAvailability(catalog);
+    return verified;
+  });
+
+  ipcMain.handle("library:save", async (_event, catalog: LibraryCatalog) => {
+    await libraryRepo.save(catalog);
+  });
+
+  ipcMain.handle(
+    "library:scan-paths",
+    async (
+      _event,
+      pathsToScan: string[],
+    ): Promise<{ catalog: LibraryCatalog; result: ScanResult }> => {
+      const currentCatalog = await libraryRepo.load();
+      const { catalog: updatedCatalog, result } = await scanLibraryPaths(
+        pathsToScan,
+        currentCatalog,
+        coversDir,
+      );
+      await libraryRepo.save(updatedCatalog);
+      return { catalog: updatedCatalog, result };
+    },
+  );
+
+  ipcMain.handle("library:remove-book", async (_event, bookId: string) => {
+    const catalog = await libraryRepo.load();
+    const updated = removeBookFromCatalog(catalog, bookId);
+    await libraryRepo.save(updated);
+    return updated;
+  });
+
+  ipcMain.handle(
+    "library:update-book",
+    async (
+      _event,
+      bookId: string,
+      updates: Partial<LibraryBook>,
+    ): Promise<LibraryCatalog> => {
+      const catalog = await libraryRepo.load();
+      const updated = updateBookInCatalog(catalog, bookId, updates);
+      await libraryRepo.save(updated);
+      return updated;
+    },
+  );
+
+  ipcMain.handle(
+    "library:create-collection",
+    async (
+      _event,
+      name: string,
+      description?: string,
+    ): Promise<LibraryCatalog> => {
+      const catalog = await libraryRepo.load();
+      const { catalog: updated } = createCollection(catalog, name, description);
+      await libraryRepo.save(updated);
+      return updated;
+    },
+  );
+
+  ipcMain.handle(
+    "library:delete-collection",
+    async (_event, collectionId: string): Promise<LibraryCatalog> => {
+      const catalog = await libraryRepo.load();
+      const updated = deleteCollection(catalog, collectionId);
+      await libraryRepo.save(updated);
+      return updated;
+    },
+  );
+
+  ipcMain.handle(
+    "library:add-book-to-collection",
+    async (
+      _event,
+      bookId: string,
+      collectionId: string,
+    ): Promise<LibraryCatalog> => {
+      const catalog = await libraryRepo.load();
+      const updated = addBookToCollection(catalog, bookId, collectionId);
+      await libraryRepo.save(updated);
+      return updated;
+    },
+  );
+
+  ipcMain.handle(
+    "library:remove-book-from-collection",
+    async (
+      _event,
+      bookId: string,
+      collectionId: string,
+    ): Promise<LibraryCatalog> => {
+      const catalog = await libraryRepo.load();
+      const updated = removeBookFromCollection(catalog, bookId, collectionId);
+      await libraryRepo.save(updated);
+      return updated;
+    },
+  );
+
+  ipcMain.handle(
+    "library:read-cover",
+    async (_event, coverPath: string): Promise<string | null> => {
+      try {
+        const buffer = await readFile(coverPath);
+        const ext = path.extname(coverPath).toLowerCase();
+        const mimeType =
+          ext === ".jpg" || ext === ".jpeg"
+            ? "image/jpeg"
+            : ext === ".webp"
+              ? "image/webp"
+              : "image/png";
+        return `data:${mimeType};base64,${buffer.toString("base64")}`;
+      } catch {
+        return null;
+      }
     },
   );
 }
