@@ -7,7 +7,9 @@
     ".": "./dist/index.js"
   },
   "dependencies": {
-    "@reflowpress/core": "workspace:*"
+    "@reflowpress/core": "workspace:*",
+    "@reflowpress/typography": "workspace:*",
+    "playwright": "^1.55.0"
   },
   "scripts": {
     "build": "tsc -b"
