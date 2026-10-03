@@ -92,12 +92,20 @@ To ensure absolute transparency between implemented features and planned milesto
 - Headless CLI subcommands: `reflowpress inspect`, `reflowpress validate`, and `reflowpress repair` (`--apply`, `--provenance`, `--rule`).
 - 3-tier golden master regression testing framework and Playwright visual regression suite.
 
+### Implemented in Milestone 0.9 (Interoperability)
+
+- Built-in OPDS 2.0 Catalog feed generator, parser with OPDS 1.2 fallback, and loopback HTTP server with range requests (`@reflowpress/opds`).
+- Decentralized 3-way sync engine with zero silent data loss (`ConflictRecord`), deterministic portable IDs, portable backup bundles, shared folder sync, and WebDAV adapter (`@reflowpress/sync`).
+- Physical e-reader device detection (Kindle, Kobo, PocketBook, Generic USB), transactional transfers with SHA-256 validation, collision avoidance, and explicit MTP capability boundary (`@reflowpress/device`).
+- EPUB 3.3 Media Overlays SMIL 3.0 audio-text synchronization parser (`parseSmilDocument`, `parseClockValue`) and audio reference inspection.
+- Headless CLI subcommands: `reflowpress opds`, `reflowpress sync`, `reflowpress backup`, `reflowpress restore`, and `reflowpress device`.
+- Desktop Interoperability Workbench modal (`InteroperabilityModal`) with tabbed navigation and WCAG 2.2 AA accessibility.
+
 ### Not Implemented (Planned in Future Milestones)
 
-- OPDS catalog feed support (Milestone 0.9)
-- Direct e-reader device transfer (Milestone 0.9)
-- Local sync via standard cloud folders (Milestone 0.9)
-- Production cross-platform installers (Milestone 1.0)
+- Production cross-platform installers and auto-updaters (Milestone 1.0)
+- Automatic crash recovery and session restoration (Milestone 1.0)
+- 1,000+ title high-scale performance benchmarks (Milestone 1.0)
 
 ---
 
@@ -190,13 +198,17 @@ To ensure absolute transparency between implemented features and planned milesto
 - [x] Accessible Desktop Health & Repair UI (`HealthModal`) with live ARIA announcements, explicit textual badges, and diff previews.
 - [x] Headless CLI diagnostic subcommands (`reflowpress inspect`, `reflowpress validate`, `reflowpress repair`).
 
-### Milestone 0.9: Interoperability (Next Priority)
+### Milestone 0.9: Interoperability (Complete)
 
-- [ ] OPDS catalog feed support.
-- [ ] Direct e-reader device transfer (USB/MTP).
-- [ ] Local sync via standard cloud folders (Syncthing, Dropbox).
+- [x] OPDS 2.0 streaming catalog feed and local loopback server (`@reflowpress/opds`).
+- [x] Multi-device 3-way synchronization with zero silent data loss (`@reflowpress/sync`).
+- [x] Portable backup bundle export and conflict-resolved restoration.
+- [x] Hardware e-reader detection and transactional USB file transfer (`@reflowpress/device`).
+- [x] EPUB 3.3 Media Overlays SMIL parser and audio reference metrics.
+- [x] Headless CLI interoperability subcommands (`opds`, `sync`, `backup`, `restore`, `device`).
+- [x] Accessible Desktop Interoperability Modal with live announcements.
 
-### Milestone 1.0: Stable Release
+### Milestone 1.0: Stable Release (Next Priority)
 
 - [ ] Production cross-platform installers (Windows, macOS, Linux).
 - [ ] Crash recovery and state restoration.

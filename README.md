@@ -11,8 +11,8 @@ ReflowPress bridges document reading, library organization, publication health i
 ## Current Status & Implementation Facts
 
 > [!IMPORTANT]
-> **ReflowPress Milestone 0.8 — Quality & Repair is Complete.**
-> The desktop reader GUI (0.3), Library catalog (0.4), Reading Tools (0.5), Japanese Typography & Accessibility (0.6), Export Workbench (0.7), and Quality Diagnostic Suite with Safe Repair (0.8) are **implemented**. Interoperability features (Milestone 0.9) are planned.
+> **ReflowPress Milestone 0.9 — Interoperability is Complete.**
+> The desktop reader GUI (0.3), Library catalog (0.4), Reading Tools (0.5), Japanese Typography & Accessibility (0.6), Export Workbench (0.7), Quality Diagnostic Suite with Safe Repair (0.8), and Interoperability & Sync Suite (0.9) are **implemented**. Milestone 1.0 (Stable Release) is next.
 
 ### Current State (`main`)
 
@@ -24,6 +24,7 @@ ReflowPress bridges document reading, library organization, publication health i
 - **Milestone 0.6 (Japanese Typography & Accessibility)**: **Complete** (Implements `@reflowpress/typography` domain package, Chromium standards-based CSS Writing Modes (`vertical-rl`), strict kinsoku line breaking, native `<ruby>` presentation, Tate-chu-yoko numeral alignment with non-destructive auto-assist, axis-aware keyboard and column progression, WCAG 2.2 AA accessibility baseline with full keyboard focus management, focus trap and restoration for dialogs, polite ARIA live announcements, high contrast and forced-colors support, reduced motion preferences, automated axe-core accessibility regression testing, and Playwright desktop E2E tests).
 - **Milestone 0.7 (Export Workbench)**: **Complete** (Implements `@reflowpress/export`, `@reflowpress/cli`, ADR 0007 Playwright Chromium headless rendering with strict network offline isolation, standalone HTML export with Data URL asset inlining, GFM Markdown export with YAML frontmatter and ruby `base（reading）` transliteration, deterministic timestamp naming `<stem>_<YYYYMMDD-HHmmss>.<ext>`, collision resolution `-001`..`-999`, transactional atomic writing, bounded concurrency batch exporting, headless CLI `reflowpress export`, and Playwright CLI E2E tests).
 - **Milestone 0.8 (Quality & Repair)**: **Complete** (Implements `@reflowpress/quality` diagnostic rule engine for EPUB and PDF, stable rule catalog `EPUB-*` and `PDF-*`, deterministic sorting and deduplication, PDF Quality Gate evaluation profiles `baseline` and `reader-export`, `@reflowpress/repair` safe non-destructive repair engine with canonical uncompressed mimetype rewriting, manifest media-type correction, standard `container.xml` creation, transactional staging with pre/post re-inspection verification, `.provenance.json` sidecar generation, headless CLI subcommands `reflowpress inspect`, `validate`, `repair`, Desktop Health & Safe Repair modal with WCAG 2.2 accessibility, 3-Tier Golden Master regression framework, 167 unit tests, and 26 Playwright E2E tests).
+- **Milestone 0.9 (Interoperability)**: **Complete** (Implements `@reflowpress/opds` with OPDS 2.0 streaming catalog and loopback server, `@reflowpress/sync` with 3-way merge engine, portable backup bundles, shared folder sync, and WebDAV RFC 4918 adapter, `@reflowpress/device` with physical e-reader detection for Kindle, Kobo, PocketBook, and Generic USB storage, EPUB 3.3 Media Overlays SMIL parser, headless CLI subcommands `opds`, `sync`, `backup`, `restore`, `device`, desktop Interoperability modal with WCAG 2.2 AA accessibility, 213 unit tests, and 27 Playwright E2E tests).
 - **Publication Core (`loadEpub`, `EpubLoader`)**: **Implemented** (`NormalizedPublication` model, reading order, navigation hierarchy, metadata, auxiliary assets).
 - **Desktop Reader MVP**: **Implemented** (EPUB/PDF viewing, TOC, reading positions, themes, typography settings).
 - **Library Catalog & Collections**: **Implemented** (Recursive scanning, cover cache, collections, shelves, search, tags).
@@ -31,13 +32,14 @@ ReflowPress bridges document reading, library organization, publication health i
 - **Japanese Typography & Accessibility**: **Implemented (Milestone 0.6)**.
 - **Export Workbench (EPUB to PDF/HTML/MD & Headless CLI)**: **Implemented (Milestone 0.7)**.
 - **Quality Diagnostic Suite & Safe Repair**: **Implemented (Milestone 0.8)**.
-- **Interoperability (OPDS, Cloud Sync, Device Transfer)**: **Next (Milestone 0.9)**.
+- **Interoperability (OPDS, Cloud Sync, Device Transfer)**: **Implemented (Milestone 0.9)**.
+- **Production Packaging & Installers**: **Next (Milestone 1.0)**.
 
 ---
 
 ## Architecture v2
 
-ReflowPress shares one single **Publication Core** between document reading and document export, preventing duplicate parsing logic.
+ReflowPress shares one single **Publication Core** between document reading, document export, and interoperability, preventing duplicate parsing logic.
 
 ```mermaid
 flowchart TD
@@ -61,6 +63,7 @@ flowchart TD
         SEARCH[Search Index<br/>implemented in 0.5]
         EXPORT[Export Engine<br/>PDF / HTML / Markdown<br/>implemented in 0.7]
         VALIDATION[Validation Gate<br/>Baseline PDF in 0.7 / Quality Gate in 0.8]
+        INTEROP[Interoperability & Sync<br/>OPDS / Sync / Device<br/>implemented in 0.9]
     end
 
     SOURCE --> INSPECTOR --> HEALTH
@@ -72,6 +75,8 @@ flowchart TD
     NORMALIZED --> SEARCH
     NORMALIZED --> EXPORT
     EXPORT --> VALIDATION
+    LIBRARY --> INTEROP
+    NORMALIZED --> INTEROP
 ```
 
 See the [Architecture v2 Document](docs/architecture.md) and [Diagram Notes](docs/diagrams/README.md) for full subsystem details.
@@ -134,39 +139,52 @@ Read the complete [Product Vision](docs/product-vision.md) and [ADE Compatibilit
 
 ## Roadmap v2
 
-| Milestone                | Scope                                                                         | Status       |
-| ------------------------ | ----------------------------------------------------------------------------- | ------------ |
-| **0.1 Foundation**       | Monorepo, contracts, CI, and Phase 1 EPUB Inspector                           | **Complete** |
-| **0.2 Publication Core** | EPUB Loader, resources, reading order, navigation, normalization              | **Complete** |
-| **0.3 Reader MVP**       | Reflowable EPUB rendering, PDF viewing, TOC, reading position, themes         | **Complete** |
-| **0.4 Library MVP**      | Local directory scan, covers, metadata catalog, collections, sorting          | **Complete** |
-| **0.5 Reading Tools**    | In-book search, bookmarks, highlights, notes, portable annotation export      | **Complete** |
-| **0.6 Japanese & A11y**  | Vertical Japanese (`vertical-rl`), ruby, kinsoku, keyboard nav, screen-reader | **Complete** |
-| **0.7 Export Workbench** | EPUB to PDF (timestamp naming), HTML, Markdown, batch CLI                     | **Complete** |
-| **0.8 Quality & Repair** | Diagnostic health suite, non-destructive safe repair, PDF Quality Gate        | **Next**     |
-| **0.9 Interoperability** | OPDS catalog support, e-reader device transfer, local cloud sync              | Planned      |
-| **1.0 Stable Release**   | Native installers, crash recovery, performance optimization, API freeze       | Planned      |
+| Milestone                | Scope                                                                           | Status       |
+| ------------------------ | ------------------------------------------------------------------------------- | ------------ |
+| **0.1 Foundation**       | Monorepo, contracts, CI, and Phase 1 EPUB Inspector                             | **Complete** |
+| **0.2 Publication Core** | EPUB Loader, resources, reading order, navigation, normalization                | **Complete** |
+| **0.3 Reader MVP**       | Reflowable EPUB rendering, PDF viewing, TOC, reading position, themes           | **Complete** |
+| **0.4 Library MVP**      | Local directory scan, covers, metadata catalog, collections, sorting            | **Complete** |
+| **0.5 Reading Tools**    | In-book search, bookmarks, highlights, notes, portable annotation export        | **Complete** |
+| **0.6 Japanese & A11y**  | Vertical Japanese (`vertical-rl`), ruby, kinsoku, keyboard nav, screen-reader   | **Complete** |
+| **0.7 Export Workbench** | EPUB to PDF (timestamp naming), HTML, Markdown, batch CLI                       | **Complete** |
+| **0.8 Quality & Repair** | Diagnostic health suite, non-destructive safe repair, PDF Quality Gate          | **Complete** |
+| **0.9 Interoperability** | OPDS 2.0 streaming, multi-device 3-way sync, physical e-readers, Media Overlays | **Complete** |
+| **1.0 Stable Release**   | Native installers, crash recovery, performance optimization, API freeze         | **Next**     |
 
 Read the full milestone descriptions in [docs/roadmap.md](docs/roadmap.md).
 
 ---
 
-## Headless CLI & Export Workbench
+## Headless CLI & Workbenches
 
-ReflowPress provides a headless CLI (`reflowpress`) for offline, automated publication conversions:
+ReflowPress provides a headless CLI (`reflowpress`) for offline, automated publication operations:
 
 ```sh
 # Export an EPUB to PDF (default format)
-node apps/cli/dist/cli.js export book.epub --format pdf --output-dir ./dist
+reflowpress export book.epub --format pdf --output-dir ./dist
 
-# Export with Japanese vertical layout and B5 page size
-node apps/cli/dist/cli.js export novel.epub --format pdf --writing-mode vertical-rl --page-size B5
+# Inspect publication health & Media Overlays
+reflowpress inspect book.epub --json
 
-# Batch export all publications in a folder to PDF, HTML, and Markdown
-node apps/cli/dist/cli.js export ./library --recursive --format all --jobs 4 --output-dir ./exports
+# Validate exported PDF against quality gates
+reflowpress validate exported.pdf --profile reader-export
 
-# Output machine-readable JSON summary to stdout
-node apps/cli/dist/cli.js export book.epub --format markdown --json
+# Safely repair EPUB package defects
+reflowpress repair book.epub --apply --output-dir ./repaired
+
+# Run local OPDS 2.0 catalog streaming server
+reflowpress opds serve --port 3000 --catalog ./library.json
+
+# Synchronize library with a Syncthing/Dropbox shared folder
+reflowpress sync folder --target /Volumes/SyncFolder --catalog ./library.json
+
+# Export portable backup bundle
+reflowpress backup --output ./my-backup.json
+
+# Detect connected e-reader devices (Kindle, Kobo, PocketBook)
+reflowpress device list --target /Volumes/KOBOeReader
+reflowpress device send /Volumes/KOBOeReader book.epub
 ```
 
 ---

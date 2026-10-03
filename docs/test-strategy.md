@@ -117,10 +117,16 @@ The test suite applies standard test design techniques across the Inspector, Loa
 21. **Repair Roundtrip & Provenance Test Suite** (`tests/unit/repair-roundtrip.test.ts`, 1 test)
 22. **CLI Quality Subcommands Test Suite** (`tests/unit/cli-quality.test.ts`, 6 tests)
 23. **Golden Master Structural & Textual Fidelity Test Suite** (`tests/unit/golden-master.test.ts`, 4 tests)
+24. **OPDS 2.0 Catalog & Loopback Server Test Suite** (`tests/unit/opds.test.ts`, 9 tests)
+25. **Multi-Device 3-Way Sync & Merge Test Suite** (`tests/unit/sync.test.ts`, 12 tests)
+26. **WebDAV Remote Sync RFC 4918 Test Suite** (`tests/unit/webdav.test.ts`, 4 tests)
+27. **E-Reader Hardware Transfer Test Suite** (`tests/unit/device.test.ts`, 8 tests)
+28. **EPUB 3.3 Media Overlays SMIL 3.0 Test Suite** (`tests/unit/media-overlay.test.ts`, 7 tests)
+29. **CLI Interoperability Subcommands Test Suite** (`tests/unit/cli-interop.test.ts`, 6 tests)
 
 ---
 
-## Playwright E2E Suites (`tests/e2e`, 26 Tests Total Across 7 Suites)
+## Playwright E2E Suites (`tests/e2e`, 27 Tests Total Across 8 Suites)
 
 1. **Reader MVP Desktop E2E** (`tests/e2e/reader-desktop.spec.ts`, 5 tests)
 2. **Library MVP Desktop E2E** (`tests/e2e/library-desktop.spec.ts`, 5 tests)
@@ -128,7 +134,8 @@ The test suite applies standard test design techniques across the Inspector, Loa
 4. **Japanese Typography & Accessibility Desktop E2E** (`tests/e2e/japanese-accessibility-desktop.spec.ts`, 4 tests)
 5. **Headless Export CLI E2E** (`tests/e2e/export-cli.spec.ts`, 5 tests)
 6. **Desktop Health & Safe Repair E2E** (`tests/e2e/health-desktop.spec.ts`, 1 test)
-7. **Visual Regression E2E** (`tests/e2e/visual-regression.spec.ts`, 1 test)
+7. **Desktop Interoperability & Sync E2E** (`tests/e2e/interop-desktop.spec.ts`, 1 test)
+8. **Visual Regression E2E** (`tests/e2e/visual-regression.spec.ts`, 1 test)
 
 ---
 
@@ -146,7 +153,7 @@ The test suite applies standard test design techniques across the Inspector, Loa
    pnpm audit --prod
    ```
 2. **CI Gates**:
-   - `verify`: Runs on `ubuntu-latest` running lint, typecheck, vitest (167 tests), and build.
-   - `desktop-e2e`: Runs on `ubuntu-latest` under `xvfb-run -a pnpm test:e2e` (26 tests) with automated failure artifact capture and axe-core accessibility regression scanning.
+   - `verify`: Runs on `ubuntu-latest` running lint, typecheck, vitest (213 tests), and build.
+   - `desktop-e2e`: Runs on `ubuntu-latest` under `xvfb-run -a pnpm test:e2e` (27 tests) with automated failure artifact capture and axe-core accessibility regression scanning.
 3. **Deterministic CI Pipeline**: GitHub Actions runs on `ubuntu-latest` with Node.js 22, verifying formatting, strict typing, unit tests, and workspace builds on every PR and push to `main`.
 4. **Golden Master Stability**: Structural and textual invariants are verified in unit testing, while visual pixel stability is checked via Playwright visual snapshots under `test:visual`.

@@ -20,8 +20,8 @@ flowchart TD
     M05 --> M06[0.6 Japanese & Accessibility<br/>COMPLETE]
     M06 --> M07[0.7 Export Workbench<br/>COMPLETE]
     M07 --> M08[0.8 Quality & Repair<br/>COMPLETE]
-    M08 --> M09[0.9 Interoperability<br/>NEXT]
-    M09 --> M10[1.0 Stable Release]
+    M08 --> M09[0.9 Interoperability<br/>COMPLETE]
+    M09 --> M10[1.0 Stable Release<br/>NEXT]
 ```
 
 ---
@@ -174,19 +174,23 @@ flowchart TD
 
 ### Milestone 0.9: Interoperability
 
-- **Status**: **Next Priority**
-- **Goal**: _Seamless data portability across reading hardware and services._
-- **Scope**:
-  - OPDS catalog feed support (local catalog server and remote client).
-  - E-reader device transfer support (USB/MTP synchronization).
-  - Library backup and cross-device sync via user-owned cloud drives (Syncthing, Dropbox, WebDAV).
-  - Audio/Video media overlays evaluation.
+- **Status**: **Complete**
+- **Goal**: _Connect ReflowPress publications, library catalog, reading positions, annotations, and safe repairs with external devices, OPDS readers, physical e-readers, and sync targets without cloud lock-ins or privacy compromises._
+- **Deliverables**:
+  - `@reflowpress/opds`: Built-in OPDS 2.0 JSON Catalog generator, parser with OPDS 1.2 Atom XML fallback, HTTP loopback server (default `127.0.0.1`), RFC 9110 Range request support (`206/416`), opaque acquisition URIs.
+  - `@reflowpress/sync`: Decentralized 3-way merge engine with zero silent data loss (`ConflictRecord`), deterministic machine-independent portable publication IDs, atomic sync bundle serializer/deserializer, shared folder adapter with lease lock recovery, WebDAV adapter (RFC 4918) with HTTPS enforcement and credential protection.
+  - `@reflowpress/device`: Hardware e-reader detection (Amazon Kindle, Rakuten Kobo, PocketBook, Generic USB storage), transactional staging transfer with SHA-256 integrity, collision prevention, directory traversal containment, and explicit MTP capability boundary.
+  - EPUB 3.3 Media Overlays: SMIL 3.0 audio-text synchronization parser (`parseClockValue`, `parseSmilDocument`) and audio reference inspection.
+  - Headless CLI subcommands: `reflowpress opds`, `reflowpress sync`, `reflowpress backup`, `reflowpress restore`, and `reflowpress device`.
+  - Desktop Workbench Interoperability Modal with WCAG 2.2 AA accessibility, ARIA live announcements, tabbed navigation across OPDS, Sync, Backup, and Device Transfer.
+  - Comprehensive documentation: [ADR 0009: Interoperability, OPDS, and Data Portability](adr/0009-interoperability-and-sync.md), [OPDS Guide](opds.md), [Sync Guide](sync.md), [Device Transfer Guide](device-transfer.md), [Media Overlays Guide](media-overlays.md).
+  - Automated test suite: 213 unit tests across 29 suites + 27 Playwright E2E tests (100% pass rate).
 
 ---
 
 ### Milestone 1.0: Stable Release
 
-- **Status**: Planned
+- **Status**: **Next Priority**
 - **Goal**: _Production-grade stability, security, and distribution._
 - **Scope**:
   - Official platform installers and auto-update mechanisms (macOS, Windows, Linux).
