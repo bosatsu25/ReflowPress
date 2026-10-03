@@ -37,6 +37,10 @@ export default defineConfig({
         __dirname,
         "packages/search/src/index.ts",
       ),
+      "@reflowpress/typography": path.resolve(
+        __dirname,
+        "packages/typography/src/index.ts",
+      ),
       "@reflowpress/validation": path.resolve(
         __dirname,
         "packages/validation/src/index.ts",
