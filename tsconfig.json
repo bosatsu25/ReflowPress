@@ -7,9 +7,11 @@
     { "path": "./packages/library" },
     { "path": "./packages/reader" },
     { "path": "./packages/renderer" },
+    { "path": "./packages/export" },
     { "path": "./packages/pdf" },
     { "path": "./packages/search" },
     { "path": "./packages/typography" },
-    { "path": "./packages/validation" }
+    { "path": "./packages/validation" },
+    { "path": "./apps/cli" }
   ]
 }

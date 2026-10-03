@@ -12,6 +12,7 @@
     "lint": "eslint . && prettier --check .",
     "typecheck": "tsc --noEmit --project tsconfig.typecheck.json --pretty false",
     "test": "vitest run",
+    "test:cli": "vitest run tests/unit/cli.test.ts && playwright test tests/e2e/export-cli.spec.ts",
     "build": "tsc -b && pnpm --filter @reflowpress/desktop build",
     "test:e2e": "playwright test"
   },

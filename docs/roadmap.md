@@ -133,20 +133,27 @@ flowchart TD
 
 ### Milestone 0.7: Export Workbench
 
-- **Status**: **Next Priority**
-- **Goal**: _Transform publications into beautiful, reusable documents._
-- **Scope**:
-  - EPUB to PDF conversion engine utilizing CSS Paged Media.
-  - Structured naming convention: preservation of source stem + conversion timestamp (`{title}_{YYYYMMDD-HHmmss}.pdf`) with second-collision handling.
-  - EPUB to clean, standalone HTML export.
-  - EPUB to Markdown export (preserving headings, images, and reading order).
-  - Headless CLI interface (`reflowpress export ...`) for batch operations.
+- **Status**: **Complete**
+- **Goal**: _Transform publications into beautiful, reusable documents (PDF, HTML, Markdown) without duplicating parser logic._
+- **Deliverables**:
+  - `@reflowpress/export`: Domain export engine implementing PDF, standalone HTML, and Markdown conversions with transactional safety.
+  - `@reflowpress/cli`: Headless CLI application (`reflowpress export`) for single-file and batch conversions with bounded concurrency.
+  - High-fidelity EPUB to PDF conversion utilizing headless Playwright Chromium with strict offline network isolation, CSS Paged Media `@page` margins, page size selection (A4, A5, B5, Letter), and Japanese typography reuse (`vertical-rl`, kinsoku, ruby, TCY).
+  - Deterministic timestamp naming policy: `<source-stem>_<YYYYMMDD-HHmmss>.<ext>` with injectable clock, Unicode Japanese character preservation in stems, and collision resolution (`-001` to `-999`).
+  - Standalone HTML export: inlines publication resources as Base64 Data URLs, strips `<script>` tags and event handlers for security, and injects typography styles.
+  - GitHub-Flavored Markdown (GFM) export: YAML frontmatter with metadata, ruby transliteration (`<ruby>基底<rt>ふりがな</rt></ruby>` -> `基底（ふりがな）`), MathML preservation with warning, table formatting, and companion asset directory map.
+  - Transactional file and directory writing: stages outputs in temporary files/folders and atomically renames on completion to prevent partial output corruption.
+  - Batch export runner with configurable worker parallelism (`--jobs <n>`), sorted inputs, cancellation via `AbortSignal`, and partial failure resilience.
+  - Headless CLI with standard exit codes (0: success, 1: partial failure, 2: fatal error), `--json` structured reports, `--quiet`, `--recursive` folder scanning, and `--overwrite`.
+  - Baseline PDF validation in `@reflowpress/validation` checking header signature (`%PDF-`), non-empty buffer, and positive page count.
+  - Architectural documentation: [ADR 0007: Export Rendering Pipeline (Playwright Chromium Headless)](adr/0007-export-rendering-pipeline.md).
+  - Automated test suite: 145 unit tests across 19 suites + 24 Playwright E2E tests (100% pass rate).
 
 ---
 
 ### Milestone 0.8: Quality & Repair
 
-- **Status**: Planned
+- **Status**: **Next Priority**
 - **Goal**: _Unmatched publication health diagnostics, automated repair, and PDF QA._
 - **Scope**:
   - Full **EPUB Health Diagnostic Suite**: broken manifests, orphaned files, missing assets, remote asset warnings, malformed OPF elements.

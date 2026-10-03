@@ -20,6 +20,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
+      - run: pnpm exec playwright install chromium
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
@@ -40,7 +41,7 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - run: pnpm build
-      - run: pnpm exec playwright install-deps
+      - run: pnpm exec playwright install chromium --with-deps
       - name: Run Desktop E2E Tests (Xvfb)
         run: xvfb-run -a pnpm test:e2e
       - name: Upload E2E Test Results

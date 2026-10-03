@@ -1,5 +1,5 @@
 {
-  "name": "@reflowpress/renderer",
+  "name": "@reflowpress/export",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,8 +8,12 @@
   },
   "dependencies": {
     "@reflowpress/core": "workspace:*",
+    "@reflowpress/epub": "workspace:*",
+    "@reflowpress/pdf": "workspace:*",
+    "@reflowpress/renderer": "workspace:*",
     "@reflowpress/typography": "workspace:*",
-    "playwright": "^1.55.0"
+    "@reflowpress/validation": "workspace:*",
+    "@xmldom/xmldom": "^0.9.12"
   },
   "scripts": {
     "build": "tsc -b"
