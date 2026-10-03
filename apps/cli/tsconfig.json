@@ -11,6 +11,10 @@
     { "path": "../../packages/export" },
     { "path": "../../packages/pdf" },
     { "path": "../../packages/quality" },
-    { "path": "../../packages/repair" }
+    { "path": "../../packages/repair" },
+    { "path": "../../packages/library" },
+    { "path": "../../packages/opds" },
+    { "path": "../../packages/sync" },
+    { "path": "../../packages/device" }
   ]
 }
