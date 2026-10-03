@@ -32,6 +32,10 @@ export default defineConfig({
         __dirname,
         "packages/renderer/src/index.ts",
       ),
+      "@reflowpress/export": path.resolve(
+        __dirname,
+        "packages/export/src/index.ts",
+      ),
       "@reflowpress/pdf": path.resolve(__dirname, "packages/pdf/src/index.ts"),
       "@reflowpress/search": path.resolve(
         __dirname,

@@ -1,0 +1,21 @@
+{
+  "name": "@reflowpress/export",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "dependencies": {
+    "@reflowpress/core": "workspace:*",
+    "@reflowpress/epub": "workspace:*",
+    "@reflowpress/pdf": "workspace:*",
+    "@reflowpress/renderer": "workspace:*",
+    "@reflowpress/typography": "workspace:*",
+    "@reflowpress/validation": "workspace:*",
+    "@xmldom/xmldom": "^0.9.12"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

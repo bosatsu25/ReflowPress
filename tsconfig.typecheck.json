@@ -13,14 +13,17 @@
       "@reflowpress/library": ["./packages/library/src/index.ts"],
       "@reflowpress/reader": ["./packages/reader/src/index.ts"],
       "@reflowpress/renderer": ["./packages/renderer/src/index.ts"],
+      "@reflowpress/export": ["./packages/export/src/index.ts"],
       "@reflowpress/pdf": ["./packages/pdf/src/index.ts"],
       "@reflowpress/search": ["./packages/search/src/index.ts"],
       "@reflowpress/typography": ["./packages/typography/src/index.ts"],
-      "@reflowpress/validation": ["./packages/validation/src/index.ts"]
+      "@reflowpress/validation": ["./packages/validation/src/index.ts"],
+      "@reflowpress/cli": ["./apps/cli/src/index.ts"]
     }
   },
   "include": [
     "packages/**/*.ts",
+    "apps/cli/src/**/*.ts",
     "tests/unit/**/*.ts",
     "vitest.config.ts",
     "playwright.config.ts"
