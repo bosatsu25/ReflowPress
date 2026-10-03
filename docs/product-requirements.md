@@ -147,19 +147,21 @@ To ensure absolute transparency between implemented features and planned milesto
 - [x] Automated accessibility regression suite via `@axe-core/playwright` scanning with 0 critical or serious violations.
 - [x] Bidirectional (Bidi) and Right-to-Left (RTL) reading planning and MathML preservation.
 
-### Milestone 0.7: Export Workbench (Next Priority)
+### Milestone 0.7: Export Workbench (Complete)
 
-- [ ] High-fidelity EPUB to PDF conversion using CSS Paged Media layout.
-- [ ] Deterministic PDF output naming:
+- [x] High-fidelity EPUB to PDF conversion using headless Playwright Chromium and CSS Paged Media `@page` layout with Japanese typography reuse.
+- [x] Deterministic PDF output naming:
   ```text
   book.epub           -> book_YYYYMMDD-HHmmss.pdf
   吾輩は猫である.epub -> 吾輩は猫である_YYYYMMDD-HHmmss.pdf
   ```
-  Collision resolution: append `-001`, `-002` if multiple conversions occur within the same second.
-- [ ] Clean HTML and Markdown export options.
-- [ ] Batch conversion via headless CLI (`reflowpress export ...`).
+  Collision resolution: append `-001`, `-002` if multiple conversions occur within the same second, up to `-999`.
+- [x] Standalone HTML export with inlined Base64 Data URL assets, `<script>` stripping, and typography CSS injection.
+- [x] Clean Markdown export with YAML frontmatter, ruby `<ruby>基底<rt>ふりがな</rt></ruby>` -> `基底（ふりがな）` transliteration, MathML preservation, and companion asset maps.
+- [x] Transactional writing staging outputs in temporary files/directories before atomic rename to prevent corruption.
+- [x] Batch conversion via headless CLI (`reflowpress export ...`) with bounded worker concurrency (`--jobs <n>`), structured JSON output (`--json`), and partial failure exit codes.
 
-### Milestone 0.8: Quality & Repair
+### Milestone 0.8: Quality & Repair (Next Priority)
 
 - [ ] Publication Health Diagnostic Suite: detailed reporting of missing assets, broken internal links, suspicious remote URLs, and malformed tags.
 - [ ] Non-destructive Safe Repair: Inspect → Explain → Preview → Repair → Verify → Undo.

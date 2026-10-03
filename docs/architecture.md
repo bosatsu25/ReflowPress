@@ -448,6 +448,56 @@ flowchart TD
    - **Screen Reader Announcements**: A polite `aria-live` region announces page shifts, chapter transitions, search results, and setting updates without interrupting active speech synthesizers.
    - **Automated Regression Audits**: Playwright E2E tests incorporate `@axe-core/playwright` scanning across Library, Reader, Settings, and Reading Tools to guarantee 0 critical or serious accessibility violations.
 
+## Milestone 0.7: Export Workbench Architecture
+
+Milestone 0.7 introduces the **Export Workbench** subsystem, comprising `@reflowpress/export` and `@reflowpress/cli`:
+
+```mermaid
+flowchart TD
+    SOURCE[EPUB File] --> LOADER[Publication Core: loadEpub]
+    LOADER --> PUB[NormalizedPublication]
+    PUB --> DRM_CHECK{DRM / Encrypted?}
+    DRM_CHECK -- Yes --> ERR[ExportError: DRM_PROTECTED_PUBLICATION]
+    DRM_CHECK -- No --> ORCH[Export Orchestrator]
+
+    ORCH --> NAMING[Deterministic Naming Engine<br/>stem_YYYYMMDD-HHmmss.ext]
+    NAMING --> COLLISION[Collision Resolver: -001..-999]
+
+    ORCH --> EXPORT_PDF[PDF Exporter<br/>ChromiumPdfRenderer]
+    ORCH --> EXPORT_HTML[HTML Exporter<br/>Inline Base64 Data URLs]
+    ORCH --> EXPORT_MD[Markdown Exporter<br/>GFM, Ruby, Frontmatter]
+
+    EXPORT_PDF --> VAL_PDF[BaselinePdfValidator<br/>PDF header, pageCount > 0]
+    VAL_PDF --> TX_WRITE[Transactional File Write<br/>Staging temp file -> Atomic Rename]
+    EXPORT_HTML --> TX_WRITE
+    EXPORT_MD --> TX_WRITE
+    EXPORT_MD --> TX_DIR[Transactional Dir Write<br/>Companion Assets Folder]
+
+    TX_WRITE --> RESULTS[ExportResult: byteSize, duration, warnings]
+    RESULTS --> CLI[Headless CLI: reflowpress export]
+```
+
+### Architectural Key Decisions & Safeguards:
+
+1. **Reusing Publication Core & Typography**:
+   - The export pipeline consumes `NormalizedPublication` directly from `loadEpub()`—no separate EPUB parser was introduced.
+   - Japanese layout rules and TCY styling from `@reflowpress/typography` are injected into both PDF and HTML outputs identically to Reader rendering.
+
+2. **Headless Playwright Chromium for PDF Export ([ADR 0007](adr/0007-export-rendering-pipeline.md))**:
+   - High-fidelity PDF rendering with full support for modern CSS Writing Modes (`vertical-rl`), native `<ruby>`, kinsoku line breaking, and CSS Paged Media `@page` sizing.
+   - Strictly offline: all network traffic (`**`) is blocked via Playwright route aborting; scripts are disabled (`javaScriptEnabled: false`).
+
+3. **Deterministic Filename Policy & Collision Handling**:
+   - Default output pattern: `<source-stem>_<YYYYMMDD-HHmmss>.<ext>`.
+   - Japanese characters in filenames are strictly preserved while filesystem-illegal characters are safely sanitized.
+   - When a target exists (e.g. repeated exports within the same second), `-001` through `-999` suffixes are assigned deterministically without overwriting user data unless `--overwrite` is specified.
+
+4. **Transactional Atomic Writes**:
+   - Output files and companion asset folders are staged in unique hidden temporary locations before atomic rename into the destination directory. Partial, truncated, or interrupted files are never left in the user's workspace.
+
+5. **Headless CLI with Standard Unix Semantics**:
+   - `reflowpress export` supports recursive directory scanning, batch worker parallelism (`--jobs <n>`), structured JSON output (`--json`), and standard exit codes (0: success, 1: partial failure, 2: fatal error).
+
 ---
 
 ## AI Policy & Integration Stance
