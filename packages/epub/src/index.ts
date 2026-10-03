@@ -22,6 +22,7 @@ export {
 } from "./loader.js";
 
 export { parseNavDocument, parseNcxDocument } from "./navigation.js";
+export * from "./media-overlay.js";
 
 export interface EpubPublicationAdapter extends PublicationAdapter<PublicationSource> {
   readonly id: "epub";
