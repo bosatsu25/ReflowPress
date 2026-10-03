@@ -19,6 +19,7 @@ export interface HeaderProps {
   onSwitchToLibrary?: () => void;
   onSwitchToReader?: () => void;
   onOpenHealth?: () => void;
+  onOpenInterop?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -39,6 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSwitchToLibrary,
   onSwitchToReader,
   onOpenHealth,
+  onOpenInterop,
 }) => {
   const isDark = theme === "dark";
   const isSepia = theme === "sepia";
@@ -296,6 +298,31 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <span>🩺</span>
             <span>Health</span>
+          </button>
+        )}
+
+        {onOpenInterop && (
+          <button
+            type="button"
+            onClick={onOpenInterop}
+            aria-label="Interoperability and Sync"
+            aria-haspopup="dialog"
+            title="OPDS, Sync, Backup, and Device Transfer"
+            style={{
+              padding: "6px 10px",
+              cursor: "pointer",
+              border: `1px solid ${borderColor}`,
+              borderRadius: "4px",
+              background: "transparent",
+              color: textColor,
+              fontSize: "13px",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <span>🔄</span>
+            <span>Interop</span>
           </button>
         )}
 

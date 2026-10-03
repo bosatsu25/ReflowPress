@@ -127,4 +127,40 @@ export const desktopBridge: DesktopBridge = {
   showOpenAnnotationFileDialog() {
     return getBridge().showOpenAnnotationFileDialog();
   },
+  inspectPublication(filePath) {
+    return getBridge().inspectPublication(filePath);
+  },
+  repairPublication(filePath, options) {
+    return getBridge().repairPublication(filePath, options);
+  },
+  opdsStart(options) {
+    return getBridge().opdsStart(options);
+  },
+  opdsStop() {
+    return getBridge().opdsStop();
+  },
+  opdsGetStatus() {
+    return getBridge().opdsGetStatus();
+  },
+  syncFolder(targetDir, options) {
+    return getBridge().syncFolder(targetDir, options);
+  },
+  syncWebdav(url, username, password, options) {
+    return getBridge().syncWebdav(url, username, password, options);
+  },
+  createBackup(outputPath) {
+    return getBridge().createBackup(outputPath);
+  },
+  previewRestore(bundlePath) {
+    return getBridge().previewRestore(bundlePath);
+  },
+  applyRestore(bundlePath, policy) {
+    return getBridge().applyRestore(bundlePath, policy);
+  },
+  discoverDevices(targetDir) {
+    return getBridge().discoverDevices(targetDir);
+  },
+  transferToDevice(targetMount, bookIds) {
+    return getBridge().transferToDevice(targetMount, bookIds);
+  },
 };

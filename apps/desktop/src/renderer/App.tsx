@@ -43,6 +43,7 @@ import { Footer } from "./components/Footer.js";
 import { TocDrawer } from "./components/TocDrawer.js";
 import { SettingsModal } from "./components/SettingsModal.js";
 import { HealthModal } from "./components/HealthModal.js";
+import { InteroperabilityModal } from "./components/InteroperabilityModal.js";
 import { EmptyState } from "./components/EmptyState.js";
 import { ErrorBanner } from "./components/ErrorBanner.js";
 import { LibraryView } from "./components/LibraryView.js";
@@ -107,6 +108,7 @@ export const App: React.FC = () => {
   const [tocOpen, setTocOpen] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [healthModalOpen, setHealthModalOpen] = useState<boolean>(false);
+  const [interopModalOpen, setInteropModalOpen] = useState<boolean>(false);
   const [currentFilePath, setCurrentFilePath] = useState<string>("");
   const [toolsDrawerOpen, setToolsDrawerOpen] = useState<boolean>(false);
   const [activeToolsTab, setActiveToolsTab] = useState<
@@ -1050,6 +1052,7 @@ export const App: React.FC = () => {
         onQuickBookmark={handleQuickBookmark}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenHealth={() => setHealthModalOpen(true)}
+        onOpenInterop={() => setInteropModalOpen(true)}
         onCloseDocument={handleCloseDocument}
         onSwitchToLibrary={() => setViewMode("library")}
         onSwitchToReader={() => setViewMode("reader")}
@@ -1248,6 +1251,12 @@ export const App: React.FC = () => {
           setHealthModalOpen(false);
           loadFile(newPath);
         }}
+      />
+
+      {/* Interoperability & Data Portability Modal */}
+      <InteroperabilityModal
+        isOpen={interopModalOpen}
+        onClose={() => setInteropModalOpen(false)}
       />
 
       {/* Screen Reader Live Status Region */}

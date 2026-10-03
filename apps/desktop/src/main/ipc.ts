@@ -1,9 +1,26 @@
 import { ipcMain, type BrowserWindow } from "electron";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { loadEpub } from "@reflowpress/epub";
 import { inspectEpubHealth, inspectPdfHealth } from "@reflowpress/quality";
 import { planRepairs, executeRepair } from "@reflowpress/repair";
+import { OpdsServer } from "@reflowpress/opds";
+import {
+  FolderSyncAdapter,
+  WebdavSyncAdapter,
+  mergeSnapshots,
+  serializeSyncBundle,
+  deserializeSyncBundle,
+  createRestorePlan,
+  applyRestore,
+  type SyncSnapshot,
+  type SyncRecord,
+  type SyncLibraryBookData,
+} from "@reflowpress/sync";
+import {
+  FilesystemDeviceAdapter,
+  type TransferItem,
+} from "@reflowpress/device";
 import type { LoadedPublicationResult } from "../preload/types.js";
 import type { SavedReadingPosition } from "@reflowpress/reader";
 import {
@@ -322,4 +339,369 @@ export function registerIpcHandlers(
       });
     },
   );
+
+  let activeOpdsServer: OpdsServer | null = null;
+  let activeOpdsInfo: { url: string; port: number; isLan: boolean } | null =
+    null;
+
+  window.on("closed", () => {
+    if (activeOpdsServer) {
+      activeOpdsServer.stop().catch(() => {});
+      activeOpdsServer = null;
+      activeOpdsInfo = null;
+    }
+  });
+
+  // OPDS Handlers
+  ipcMain.handle(
+    "opds:start",
+    async (_event, options?: { port?: number; allowLan?: boolean }) => {
+      if (activeOpdsServer) {
+        await activeOpdsServer.stop();
+      }
+      activeOpdsServer = new OpdsServer({
+        port: options?.port ?? 3000,
+        allowLan: options?.allowLan ?? false,
+        getCatalog: () => libraryRepo.load(),
+      });
+      activeOpdsInfo = await activeOpdsServer.start();
+      return activeOpdsInfo;
+    },
+  );
+
+  ipcMain.handle("opds:stop", async () => {
+    if (activeOpdsServer) {
+      await activeOpdsServer.stop();
+      activeOpdsServer = null;
+      activeOpdsInfo = null;
+    }
+  });
+
+  ipcMain.handle("opds:status", async () => {
+    return {
+      running: Boolean(activeOpdsServer),
+      url: activeOpdsInfo?.url,
+      port: activeOpdsInfo?.port,
+      isLan: activeOpdsInfo?.isLan,
+    };
+  });
+
+  // Sync Handlers
+  ipcMain.handle(
+    "sync:folder",
+    async (_event, targetDir: string, options?: { dryRun?: boolean }) => {
+      const catalog = await libraryRepo.load();
+      const localSnapshot = catalogToSnapshot(catalog);
+      const adapter = new FolderSyncAdapter({
+        syncFolderPath: path.resolve(targetDir),
+      });
+
+      await adapter.acquireLock();
+      try {
+        const remoteSnapshot = await adapter.readSnapshot();
+        const emptyRemoteSnapshot: SyncSnapshot = {
+          manifest: {
+            schemaVersion: 1,
+            bundleId: "remote-folder-init",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            sourceInstallationId: "remote-folder",
+            counts: {
+              books: 0,
+              annotations: 0,
+              bookmarks: 0,
+              readingPositions: 0,
+              tombstones: 0,
+              conflicts: 0,
+            },
+          },
+          books: [],
+          annotations: [],
+          bookmarks: [],
+          readingPositions: [],
+          tombstones: [],
+          conflicts: [],
+        };
+
+        const mergeResult = mergeSnapshots(
+          null,
+          localSnapshot,
+          remoteSnapshot ?? emptyRemoteSnapshot,
+        );
+
+        if (!options?.dryRun) {
+          await adapter.writeSnapshot(mergeResult.snapshot);
+          const remoteBooks = mergeResult.snapshot.books.map(
+            (b: SyncRecord<SyncLibraryBookData>) => ({
+              id: b.id,
+              title: b.data.title,
+              creator: b.data.author,
+              format: b.data.format,
+              collectionIds: b.data.collections ? [...b.data.collections] : [],
+              tags: b.data.tags ? [...b.data.tags] : [],
+              dateAdded: b.updatedAt,
+              filePath: "",
+              fileSizeBytes: 0,
+              modifiedTimeMs: Date.now(),
+              availability: {
+                exists: false,
+                lastChecked: new Date().toISOString(),
+              },
+            }),
+          );
+          catalog.books = remoteBooks;
+          await libraryRepo.save(catalog);
+        }
+
+        return {
+          appliedRemote: mergeResult.appliedRemoteChanges,
+          preservedLocal: mergeResult.preservedLocalChanges,
+          conflicts: mergeResult.newConflicts.length,
+          totalBooks: mergeResult.snapshot.books.length,
+        };
+      } finally {
+        await adapter.releaseLock();
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "sync:webdav",
+    async (
+      _event,
+      url: string,
+      username?: string,
+      password?: string,
+      options?: { dryRun?: boolean },
+    ) => {
+      const catalog = await libraryRepo.load();
+      const localSnapshot = catalogToSnapshot(catalog);
+      const adapter = new WebdavSyncAdapter({
+        remoteUrl: url,
+        username,
+        password,
+        allowInsecure: false,
+      });
+
+      const remoteSnapshot = await adapter.readSnapshot();
+      const emptyRemoteSnapshot: SyncSnapshot = {
+        manifest: {
+          schemaVersion: 1,
+          bundleId: "remote-webdav-init",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          sourceInstallationId: "remote-webdav",
+          counts: {
+            books: 0,
+            annotations: 0,
+            bookmarks: 0,
+            readingPositions: 0,
+            tombstones: 0,
+            conflicts: 0,
+          },
+        },
+        books: [],
+        annotations: [],
+        bookmarks: [],
+        readingPositions: [],
+        tombstones: [],
+        conflicts: [],
+      };
+
+      const mergeResult = mergeSnapshots(
+        null,
+        localSnapshot,
+        remoteSnapshot ?? emptyRemoteSnapshot,
+      );
+
+      if (!options?.dryRun) {
+        await adapter.writeSnapshot(mergeResult.snapshot);
+        const remoteBooks = mergeResult.snapshot.books.map(
+          (b: SyncRecord<SyncLibraryBookData>) => ({
+            id: b.id,
+            title: b.data.title,
+            creator: b.data.author,
+            format: b.data.format,
+            collectionIds: b.data.collections ? [...b.data.collections] : [],
+            tags: b.data.tags ? [...b.data.tags] : [],
+            dateAdded: b.updatedAt,
+            filePath: "",
+            fileSizeBytes: 0,
+            modifiedTimeMs: Date.now(),
+            availability: {
+              exists: false,
+              lastChecked: new Date().toISOString(),
+            },
+          }),
+        );
+        catalog.books = remoteBooks;
+        await libraryRepo.save(catalog);
+      }
+
+      return {
+        appliedRemote: mergeResult.appliedRemoteChanges,
+        preservedLocal: mergeResult.preservedLocalChanges,
+        conflicts: mergeResult.newConflicts.length,
+        totalBooks: mergeResult.snapshot.books.length,
+      };
+    },
+  );
+
+  // Backup & Restore Handlers
+  ipcMain.handle("backup:create", async (_event, outputPath: string) => {
+    const catalog = await libraryRepo.load();
+    const snapshot = catalogToSnapshot(catalog);
+    const bundleFiles = serializeSyncBundle(snapshot);
+    await writeFile(outputPath, JSON.stringify(bundleFiles, null, 2), "utf-8");
+    return {
+      success: true,
+      outputPath,
+      count: snapshot.books.length,
+    };
+  });
+
+  ipcMain.handle("restore:preview", async (_event, bundlePath: string) => {
+    const raw = await readFile(path.resolve(bundlePath), "utf-8");
+    const bundleMap = JSON.parse(raw) as Record<string, string>;
+    const remoteSnapshot = deserializeSyncBundle(bundleMap);
+    const catalog = await libraryRepo.load();
+    const localSnapshot = catalogToSnapshot(catalog);
+    return createRestorePlan(remoteSnapshot, localSnapshot);
+  });
+
+  ipcMain.handle(
+    "restore:apply",
+    async (
+      _event,
+      bundlePath: string,
+      policy?: "keep-local" | "keep-remote" | "keep-both",
+    ) => {
+      const raw = await readFile(path.resolve(bundlePath), "utf-8");
+      const bundleMap = JSON.parse(raw) as Record<string, string>;
+      const remoteSnapshot = deserializeSyncBundle(bundleMap);
+      const catalog = await libraryRepo.load();
+      const localSnapshot = catalogToSnapshot(catalog);
+
+      const { restoredSnapshot, resolvedConflicts } = applyRestore(
+        remoteSnapshot,
+        localSnapshot,
+        { conflictPolicy: policy ?? "keep-local" },
+      );
+
+      catalog.books = restoredSnapshot.books.map(
+        (b: SyncRecord<SyncLibraryBookData>) => ({
+          id: b.id,
+          title: b.data.title,
+          creator: b.data.author,
+          format: b.data.format,
+          collectionIds: b.data.collections ? [...b.data.collections] : [],
+          tags: b.data.tags ? [...b.data.tags] : [],
+          dateAdded: b.updatedAt,
+          filePath: "",
+          fileSizeBytes: 0,
+          modifiedTimeMs: Date.now(),
+          availability: {
+            exists: false,
+            lastChecked: new Date().toISOString(),
+          },
+        }),
+      );
+      catalog.updatedAt = new Date().toISOString();
+      await libraryRepo.save(catalog);
+
+      return {
+        restoredBooks: restoredSnapshot.books.length,
+        resolvedConflicts,
+      };
+    },
+  );
+
+  // Device Handlers
+  ipcMain.handle("device:discover", async (_event, targetDir?: string) => {
+    const mountDir = path.resolve(targetDir ?? process.cwd());
+    const adapter = new FilesystemDeviceAdapter(mountDir);
+    return adapter.discover();
+  });
+
+  ipcMain.handle(
+    "device:transfer",
+    async (_event, targetMount: string, bookIds: string[]) => {
+      const catalog = await libraryRepo.load();
+      const booksToTransfer = catalog.books.filter((b) =>
+        bookIds.includes(b.id),
+      );
+
+      const adapter = new FilesystemDeviceAdapter(path.resolve(targetMount));
+      const devices = await adapter.discover();
+      const dev = devices[0];
+      if (!dev) {
+        throw new Error(
+          `No valid target e-reader device found at '${targetMount}'`,
+        );
+      }
+
+      const items: TransferItem[] = [];
+      for (const b of booksToTransfer) {
+        if (!b.filePath) continue;
+        try {
+          const st = await stat(b.filePath);
+          items.push({
+            sourcePath: b.filePath,
+            targetFilename: path.basename(b.filePath),
+            format: b.format,
+            byteSize: st.size,
+          });
+        } catch {
+          // File missing or inaccessible, skip
+        }
+      }
+
+      const plan = await adapter.createTransferPlan(items, dev);
+      return adapter.executeTransfer(plan);
+    },
+  );
+}
+
+function catalogToSnapshot(
+  catalog: LibraryCatalog,
+  installationId = "desktop-node",
+): SyncSnapshot {
+  const books = (catalog.books || []).map((b) => ({
+    id: b.id,
+    rev: b.id,
+    updatedAt: b.dateAdded || new Date().toISOString(),
+    installationId,
+    data: {
+      portableId: b.id,
+      title: b.title,
+      author: b.creator,
+      format: (b.format === "pdf" ? "pdf" : "epub") as "epub" | "pdf",
+      collections: b.collectionIds,
+      tags: b.tags,
+    },
+  }));
+
+  return {
+    manifest: {
+      schemaVersion: 1,
+      bundleId: `bundle-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      sourceInstallationId: installationId,
+      counts: {
+        books: books.length,
+        annotations: 0,
+        bookmarks: 0,
+        readingPositions: 0,
+        tombstones: 0,
+        conflicts: 0,
+      },
+    },
+    books,
+    annotations: [],
+    bookmarks: [],
+    readingPositions: [],
+    tombstones: [],
+    conflicts: [],
+  };
 }

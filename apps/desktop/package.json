@@ -21,6 +21,9 @@
     "@reflowpress/repair": "workspace:*",
     "@reflowpress/search": "workspace:*",
     "@reflowpress/typography": "workspace:*",
+    "@reflowpress/opds": "workspace:*",
+    "@reflowpress/sync": "workspace:*",
+    "@reflowpress/device": "workspace:*",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
