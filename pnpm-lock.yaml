@@ -44,6 +44,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@reflowpress/annotations':
+        specifier: workspace:*
+        version: link:../../packages/annotations
       '@reflowpress/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -56,6 +59,9 @@ importers:
       '@reflowpress/reader':
         specifier: workspace:*
         version: link:../../packages/reader
+      '@reflowpress/search':
+        specifier: workspace:*
+        version: link:../../packages/search
       pdfjs-dist:
         specifier: ^4.10.38
         version: 4.10.38
@@ -84,6 +90,12 @@ importers:
       vite:
         specifier: ^6.0.0
         version: 6.4.3(@types/node@22.20.4)
+
+  packages/annotations:
+    dependencies:
+      '@reflowpress/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/core: {}
 
@@ -123,6 +135,15 @@ importers:
 
   packages/renderer:
     dependencies:
+      '@reflowpress/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/search:
+    dependencies:
+      '@reflowpress/annotations':
+        specifier: workspace:*
+        version: link:../annotations
       '@reflowpress/core':
         specifier: workspace:*
         version: link:../core

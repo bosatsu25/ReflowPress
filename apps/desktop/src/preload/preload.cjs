@@ -73,6 +73,35 @@ const bridge = {
   readCoverImage(coverPath) {
     return ipcRenderer.invoke("library:read-cover", coverPath);
   },
+  // Annotations API
+  loadAnnotations() {
+    return ipcRenderer.invoke("annotations:load");
+  },
+  saveAnnotations(store) {
+    return ipcRenderer.invoke("annotations:save", store);
+  },
+  exportAnnotations(publication, format, targetPath, publicationId) {
+    return ipcRenderer.invoke(
+      "annotations:export",
+      publication,
+      format,
+      targetPath,
+      publicationId,
+    );
+  },
+  importAnnotations(sourcePath, targetPublicationId) {
+    return ipcRenderer.invoke(
+      "annotations:import",
+      sourcePath,
+      targetPublicationId,
+    );
+  },
+  showSaveFileDialog(options) {
+    return ipcRenderer.invoke("dialog:save-file", options);
+  },
+  showOpenAnnotationFileDialog() {
+    return ipcRenderer.invoke("dialog:open-annotation-file");
+  },
 };
 
 contextBridge.exposeInMainWorld("reflowPressDesktop", bridge);

@@ -1,12 +1,14 @@
 {
   "files": [],
   "references": [
+    { "path": "./packages/annotations" },
     { "path": "./packages/core" },
     { "path": "./packages/epub" },
     { "path": "./packages/library" },
     { "path": "./packages/reader" },
     { "path": "./packages/renderer" },
     { "path": "./packages/pdf" },
+    { "path": "./packages/search" },
     { "path": "./packages/validation" }
   ]
 }
