@@ -57,6 +57,18 @@ export default defineConfig({
         __dirname,
         "packages/repair/src/index.ts",
       ),
+      "@reflowpress/opds": path.resolve(
+        __dirname,
+        "packages/opds/src/index.ts",
+      ),
+      "@reflowpress/sync": path.resolve(
+        __dirname,
+        "packages/sync/src/index.ts",
+      ),
+      "@reflowpress/device": path.resolve(
+        __dirname,
+        "packages/device/src/index.ts",
+      ),
     },
   },
   test: {

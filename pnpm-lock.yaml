@@ -50,12 +50,21 @@ importers:
       '@reflowpress/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@reflowpress/device':
+        specifier: workspace:*
+        version: link:../../packages/device
       '@reflowpress/epub':
         specifier: workspace:*
         version: link:../../packages/epub
       '@reflowpress/export':
         specifier: workspace:*
         version: link:../../packages/export
+      '@reflowpress/library':
+        specifier: workspace:*
+        version: link:../../packages/library
+      '@reflowpress/opds':
+        specifier: workspace:*
+        version: link:../../packages/opds
       '@reflowpress/pdf':
         specifier: workspace:*
         version: link:../../packages/pdf
@@ -65,6 +74,9 @@ importers:
       '@reflowpress/repair':
         specifier: workspace:*
         version: link:../../packages/repair
+      '@reflowpress/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
     devDependencies:
       '@types/node':
         specifier: ^20.14.10
@@ -81,12 +93,18 @@ importers:
       '@reflowpress/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@reflowpress/device':
+        specifier: workspace:*
+        version: link:../../packages/device
       '@reflowpress/epub':
         specifier: workspace:*
         version: link:../../packages/epub
       '@reflowpress/library':
         specifier: workspace:*
         version: link:../../packages/library
+      '@reflowpress/opds':
+        specifier: workspace:*
+        version: link:../../packages/opds
       '@reflowpress/quality':
         specifier: workspace:*
         version: link:../../packages/quality
@@ -99,6 +117,9 @@ importers:
       '@reflowpress/search':
         specifier: workspace:*
         version: link:../../packages/search
+      '@reflowpress/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@reflowpress/typography':
         specifier: workspace:*
         version: link:../../packages/typography
@@ -138,6 +159,22 @@ importers:
         version: link:../core
 
   packages/core: {}
+
+  packages/device:
+    dependencies:
+      '@reflowpress/core':
+        specifier: workspace:*
+        version: link:../core
+      '@reflowpress/library':
+        specifier: workspace:*
+        version: link:../library
+    devDependencies:
+      '@types/node':
+        specifier: ^20.14.10
+        version: 20.19.43
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
 
   packages/epub:
     dependencies:
@@ -184,6 +221,25 @@ importers:
       '@reflowpress/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/opds:
+    dependencies:
+      '@reflowpress/core':
+        specifier: workspace:*
+        version: link:../core
+      '@reflowpress/library':
+        specifier: workspace:*
+        version: link:../library
+      '@xmldom/xmldom':
+        specifier: ^0.9.8
+        version: 0.9.12
+    devDependencies:
+      '@types/node':
+        specifier: ^20.14.10
+        version: 20.19.43
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
 
   packages/pdf:
     dependencies:
@@ -279,6 +335,28 @@ importers:
       '@reflowpress/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/sync:
+    dependencies:
+      '@reflowpress/annotations':
+        specifier: workspace:*
+        version: link:../annotations
+      '@reflowpress/core':
+        specifier: workspace:*
+        version: link:../core
+      '@reflowpress/library':
+        specifier: workspace:*
+        version: link:../library
+      '@reflowpress/reader':
+        specifier: workspace:*
+        version: link:../reader
+    devDependencies:
+      '@types/node':
+        specifier: ^20.14.10
+        version: 20.19.43
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
 
   packages/typography:
     dependencies:
