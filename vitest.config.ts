@@ -8,6 +8,10 @@ const __dirname = path.dirname(__filename);
 export default defineConfig({
   resolve: {
     alias: {
+      "@reflowpress/annotations": path.resolve(
+        __dirname,
+        "packages/annotations/src/index.ts",
+      ),
       "@reflowpress/core": path.resolve(
         __dirname,
         "packages/core/src/index.ts",
@@ -29,6 +33,10 @@ export default defineConfig({
         "packages/renderer/src/index.ts",
       ),
       "@reflowpress/pdf": path.resolve(__dirname, "packages/pdf/src/index.ts"),
+      "@reflowpress/search": path.resolve(
+        __dirname,
+        "packages/search/src/index.ts",
+      ),
       "@reflowpress/validation": path.resolve(
         __dirname,
         "packages/validation/src/index.ts",

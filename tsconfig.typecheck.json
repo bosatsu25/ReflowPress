@@ -7,12 +7,14 @@
     "noEmit": true,
     "types": ["node", "vitest/globals"],
     "paths": {
+      "@reflowpress/annotations": ["./packages/annotations/src/index.ts"],
       "@reflowpress/core": ["./packages/core/src/index.ts"],
       "@reflowpress/epub": ["./packages/epub/src/index.ts"],
       "@reflowpress/library": ["./packages/library/src/index.ts"],
       "@reflowpress/reader": ["./packages/reader/src/index.ts"],
       "@reflowpress/renderer": ["./packages/renderer/src/index.ts"],
       "@reflowpress/pdf": ["./packages/pdf/src/index.ts"],
+      "@reflowpress/search": ["./packages/search/src/index.ts"],
       "@reflowpress/validation": ["./packages/validation/src/index.ts"]
     }
   },
