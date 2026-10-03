@@ -108,6 +108,37 @@ const bridge = {
   repairPublication(filePath, options) {
     return ipcRenderer.invoke("publication:repair", filePath, options);
   },
+  // Interoperability API
+  opdsStart(options) {
+    return ipcRenderer.invoke("opds:start", options);
+  },
+  opdsStop() {
+    return ipcRenderer.invoke("opds:stop");
+  },
+  opdsGetStatus() {
+    return ipcRenderer.invoke("opds:status");
+  },
+  syncFolder(targetDir, options) {
+    return ipcRenderer.invoke("sync:folder", targetDir, options);
+  },
+  syncWebdav(url, username, password, options) {
+    return ipcRenderer.invoke("sync:webdav", url, username, password, options);
+  },
+  createBackup(outputPath) {
+    return ipcRenderer.invoke("backup:create", outputPath);
+  },
+  previewRestore(bundlePath) {
+    return ipcRenderer.invoke("restore:preview", bundlePath);
+  },
+  applyRestore(bundlePath, policy) {
+    return ipcRenderer.invoke("restore:apply", bundlePath, policy);
+  },
+  discoverDevices(targetDir) {
+    return ipcRenderer.invoke("device:discover", targetDir);
+  },
+  transferToDevice(targetMount, bookIds) {
+    return ipcRenderer.invoke("device:transfer", targetMount, bookIds);
+  },
 };
 
 contextBridge.exposeInMainWorld("reflowPressDesktop", bridge);

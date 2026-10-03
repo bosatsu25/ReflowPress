@@ -17,6 +17,25 @@ import {
   type HealthReport,
 } from "@reflowpress/quality";
 import { planRepairs, executeRepair } from "@reflowpress/repair";
+import { OpdsServer, fetchRemoteOpdsFeed } from "@reflowpress/opds";
+import {
+  FolderSyncAdapter,
+  WebdavSyncAdapter,
+  mergeSnapshots,
+  serializeSyncBundle,
+  deserializeSyncBundle,
+  createRestorePlan,
+  applyRestore,
+  type SyncSnapshot,
+} from "@reflowpress/sync";
+import {
+  FilesystemDeviceAdapter,
+  type TransferItem,
+} from "@reflowpress/device";
+import {
+  type LibraryCatalog,
+  createDefaultCatalog,
+} from "@reflowpress/library";
 
 export const CLI_VERSION = "0.1.0";
 
@@ -57,6 +76,11 @@ Commands:
   inspect                     Inspect publication health (EPUB or PDF)
   validate                    Validate PDF outputs against Quality Gate profiles
   repair                      Plan or execute safe repairs on EPUB publications (dry-run by default)
+  opds                        Run local OPDS 2.0 catalog server or fetch remote feeds
+  sync                        Synchronize library with a target folder or WebDAV endpoint
+  backup                      Create a portable sync/backup bundle from library catalog
+  restore                     Preview or apply a restore bundle into library catalog
+  device                      Detect e-readers, plan transfer, or copy publications
 
 Export Options:
   -f, --format <format>       Output format: pdf | html | markdown | all (default: pdf)
@@ -76,6 +100,19 @@ Repair Options:
       --rule <id>             Filter repair actions to specific diagnostic rule ID
       --provenance            Write .provenance.json sidecar metadata
 
+Interoperability Options:
+      --port <port>           OPDS server port (default: 3000)
+      --host <host>           OPDS server host (default: 127.0.0.1)
+      --allow-lan             Allow LAN access to OPDS server (binds to 0.0.0.0)
+      --catalog <path>        Path to library catalog JSON file
+      --target <path>         Target sync directory or device mount point
+      --url <url>             Remote OPDS feed or WebDAV server URL
+      --user <username>       WebDAV username (password read via REFLOWPRESS_WEBDAV_PASSWORD)
+      --output <path>         Output file path for backup bundle
+      --preview               Preview restore operations without modifying catalog
+      --policy <policy>       Restore conflict policy: keep-local | keep-remote | keep-both (default: keep-local)
+      --dry-run               Simulate sync or device transfer without writing files
+
 Global Options:
       --json                  Print structured JSON report to stdout
   -q, --quiet                 Suppress progress messages (errors still print to stderr)
@@ -88,6 +125,12 @@ Examples:
   reflowpress validate exported.pdf --profile reader-export
   reflowpress repair book.epub
   reflowpress repair book.epub --apply --output-dir ./repaired
+  reflowpress opds serve --port 8080 --catalog ./library.json
+  reflowpress sync folder --target /Volumes/SyncFolder --catalog ./library.json
+  reflowpress backup --output ./my-backup.json --catalog ./library.json
+  reflowpress restore ./my-backup.json --preview
+  reflowpress device list --target /Volumes/KOBOeReader
+  reflowpress device send /Volumes/KOBOeReader book.epub
 `;
   console.log(helpText.trim());
 }
@@ -160,6 +203,18 @@ export async function runCli(
         apply: { type: "boolean", default: false },
         rule: { type: "string" },
         provenance: { type: "boolean", default: false },
+        port: { type: "string" },
+        host: { type: "string" },
+        "allow-lan": { type: "boolean", default: false },
+        catalog: { type: "string" },
+        target: { type: "string" },
+        url: { type: "string" },
+        user: { type: "string" },
+        output: { type: "string" },
+        preview: { type: "boolean", default: false },
+        policy: { type: "string", default: "keep-local" },
+        "dry-run": { type: "boolean", default: false },
+        device: { type: "string" },
         json: { type: "boolean", default: false },
         quiet: { type: "boolean", short: "q", default: false },
         version: { type: "boolean", short: "v", default: false },
@@ -186,19 +241,27 @@ export async function runCli(
     return EXIT_CODES.SUCCESS;
   }
 
-  const command = ["export", "inspect", "validate", "repair"].includes(
-    positionals[0] ?? "",
-  )
-    ? positionals[0]!
-    : "export";
+  const KNOWN_COMMANDS = [
+    "export",
+    "inspect",
+    "validate",
+    "repair",
+    "opds",
+    "sync",
+    "backup",
+    "restore",
+    "device",
+  ];
 
-  const rawInputs = ["export", "inspect", "validate", "repair"].includes(
-    positionals[0] ?? "",
-  )
-    ? positionals.slice(1)
-    : positionals;
+  const firstArg = positionals[0] ?? "";
+  const isKnown = KNOWN_COMMANDS.includes(firstArg);
+  const command = isKnown ? firstArg : "export";
+  const rawInputs = isKnown ? positionals.slice(1) : positionals;
 
-  if (rawInputs.length === 0) {
+  if (
+    ["export", "inspect", "validate", "repair"].includes(command) &&
+    rawInputs.length === 0
+  ) {
     logErr("Error: No input files or directories specified.");
     logErr("Run 'reflowpress --help' for usage instructions.");
     return EXIT_CODES.FATAL_ERROR;
@@ -242,6 +305,32 @@ export async function runCli(
     );
   }
 
+  if (command === "opds") {
+    return runOpds(
+      rawInputs,
+      values,
+      { isJson, isQuiet, signal: io.signal },
+      log,
+      logErr,
+    );
+  }
+
+  if (command === "sync") {
+    return runSync(rawInputs, values, { isJson, isQuiet }, log, logErr);
+  }
+
+  if (command === "backup") {
+    return runBackup(rawInputs, values, { isJson, isQuiet }, log, logErr);
+  }
+
+  if (command === "restore") {
+    return runRestore(rawInputs, values, { isJson, isQuiet }, log, logErr);
+  }
+
+  if (command === "device") {
+    return runDevice(rawInputs, values, { isJson, isQuiet }, log, logErr);
+  }
+
   // Default: export
   return runExport(
     rawInputs,
@@ -250,6 +339,638 @@ export async function runCli(
     log,
     logErr,
   );
+}
+
+async function loadCatalogFile(catalogPath?: string): Promise<LibraryCatalog> {
+  if (!catalogPath) return createDefaultCatalog();
+  try {
+    const data = await fs.readFile(catalogPath, "utf-8");
+    return JSON.parse(data) as LibraryCatalog;
+  } catch {
+    return createDefaultCatalog();
+  }
+}
+
+async function saveCatalogFile(
+  catalogPath: string,
+  catalog: LibraryCatalog,
+): Promise<void> {
+  await fs.mkdir(path.dirname(catalogPath), { recursive: true });
+  await fs.writeFile(catalogPath, JSON.stringify(catalog, null, 2), "utf-8");
+}
+
+function catalogToSnapshot(
+  catalog: LibraryCatalog,
+  installationId = "cli-node",
+): SyncSnapshot {
+  const books = (catalog.books || []).map((b) => ({
+    id: b.id,
+    rev: b.id,
+    updatedAt: b.dateAdded || new Date().toISOString(),
+    installationId,
+    data: {
+      portableId: b.id,
+      title: b.title,
+      author: b.creator,
+      format: (b.format === "pdf" ? "pdf" : "epub") as "epub" | "pdf",
+      collections: b.collectionIds,
+      tags: b.tags,
+    },
+  }));
+
+  return {
+    manifest: {
+      schemaVersion: 1,
+      bundleId: `bundle-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      sourceInstallationId: installationId,
+      counts: {
+        books: books.length,
+        annotations: 0,
+        bookmarks: 0,
+        readingPositions: 0,
+        tombstones: 0,
+        conflicts: 0,
+      },
+    },
+    books,
+    annotations: [],
+    bookmarks: [],
+    readingPositions: [],
+    tombstones: [],
+    conflicts: [],
+  };
+}
+
+async function runOpds(
+  inputs: readonly string[],
+  values: Record<string, unknown>,
+  options: {
+    isJson: boolean;
+    isQuiet: boolean;
+    signal?: AbortSignal | undefined;
+  },
+  log: (m: string) => void,
+  logErr: (m: string) => void,
+): Promise<number> {
+  const subCmd = inputs[0] ?? "serve";
+  if (subCmd === "serve") {
+    const port = parseInt(String(values.port ?? "3000"), 10);
+    const host = String(
+      values.host ?? (values["allow-lan"] ? "0.0.0.0" : "127.0.0.1"),
+    );
+    const allowLan = Boolean(values["allow-lan"]);
+    const catalogPath = values.catalog ? String(values.catalog) : undefined;
+
+    const server = new OpdsServer({
+      port,
+      host,
+      allowLan,
+      getCatalog: async () => loadCatalogFile(catalogPath),
+    });
+
+    try {
+      const serverInfo = await server.start();
+      if (options.isJson) {
+        log(
+          JSON.stringify({
+            status: "running",
+            port: serverInfo.port,
+            host: serverInfo.host,
+            allowLan: serverInfo.isLan,
+            url: serverInfo.url,
+          }),
+        );
+      } else if (!options.isQuiet) {
+        log(`ReflowPress OPDS 2.0 Server running at: ${serverInfo.url}`);
+        log(`Loopback only: ${!serverInfo.isLan}`);
+        log("Press Ctrl+C to stop.");
+      }
+
+      if (options.signal) {
+        return new Promise<number>((resolve) => {
+          options.signal?.addEventListener("abort", async () => {
+            await server.stop();
+            resolve(EXIT_CODES.SUCCESS);
+          });
+        });
+      }
+      return EXIT_CODES.SUCCESS;
+    } catch (err) {
+      logErr(
+        `OPDS server failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EXIT_CODES.FATAL_ERROR;
+    }
+  }
+
+  if (subCmd === "fetch") {
+    const url = inputs[1] ?? (values.url ? String(values.url) : undefined);
+    if (!url) {
+      logErr(
+        "Error: Missing OPDS feed URL. Usage: reflowpress opds fetch <url>",
+      );
+      return EXIT_CODES.FATAL_ERROR;
+    }
+
+    try {
+      const feed = await fetchRemoteOpdsFeed(url);
+      if (options.isJson) {
+        log(JSON.stringify(feed, null, 2));
+      } else if (!options.isQuiet) {
+        log(`OPDS Feed: ${feed.metadata.title}`);
+        log(`Publications: ${feed.publications?.length ?? 0}`);
+        if (feed.publications) {
+          for (const pub of feed.publications) {
+            log(
+              `  - ${pub.metadata.title} (by ${typeof pub.metadata.author === "string" ? pub.metadata.author : "Unknown"})`,
+            );
+          }
+        }
+      }
+      return EXIT_CODES.SUCCESS;
+    } catch (err) {
+      logErr(
+        `OPDS fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EXIT_CODES.FATAL_ERROR;
+    }
+  }
+
+  logErr(`Unknown opds subcommand: ${subCmd}. Expected 'serve' or 'fetch'.`);
+  return EXIT_CODES.FATAL_ERROR;
+}
+
+async function runSync(
+  inputs: readonly string[],
+  values: Record<string, unknown>,
+  options: { isJson: boolean; isQuiet: boolean },
+  log: (m: string) => void,
+  logErr: (m: string) => void,
+): Promise<number> {
+  const subCmd = inputs[0] ?? "folder";
+  const catalogPath = values.catalog ? String(values.catalog) : undefined;
+  const catalog = await loadCatalogFile(catalogPath);
+  const localSnapshot = catalogToSnapshot(catalog);
+  const dryRun = Boolean(values["dry-run"]);
+
+  if (subCmd === "folder") {
+    const targetDir =
+      (values.target ? String(values.target) : undefined) ?? inputs[1];
+    if (!targetDir) {
+      logErr("Error: Missing target sync directory. Specify --target <dir>");
+      return EXIT_CODES.FATAL_ERROR;
+    }
+
+    try {
+      const adapter = new FolderSyncAdapter({
+        syncFolderPath: path.resolve(targetDir),
+      });
+      await adapter.acquireLock();
+      try {
+        const remoteSnapshot = await adapter.readSnapshot();
+        const emptyRemoteSnapshot: SyncSnapshot = {
+          manifest: {
+            schemaVersion: 1,
+            bundleId: "remote-folder-init",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            sourceInstallationId: "remote-folder",
+            counts: {
+              books: 0,
+              annotations: 0,
+              bookmarks: 0,
+              readingPositions: 0,
+              tombstones: 0,
+              conflicts: 0,
+            },
+          },
+          books: [],
+          annotations: [],
+          bookmarks: [],
+          readingPositions: [],
+          tombstones: [],
+          conflicts: [],
+        };
+
+        const mergeResult = mergeSnapshots(
+          null,
+          localSnapshot,
+          remoteSnapshot ?? emptyRemoteSnapshot,
+        );
+
+        if (!dryRun) {
+          await adapter.writeSnapshot(mergeResult.snapshot);
+          if (catalogPath) {
+            catalog.updatedAt = new Date().toISOString();
+            await saveCatalogFile(catalogPath, catalog);
+          }
+        }
+
+        if (options.isJson) {
+          log(
+            JSON.stringify(
+              {
+                dryRun,
+                newConflicts: mergeResult.newConflicts.length,
+                mergedBooks: mergeResult.snapshot.books.length,
+                appliedRemoteChanges: mergeResult.appliedRemoteChanges,
+                preservedLocalChanges: mergeResult.preservedLocalChanges,
+              },
+              null,
+              2,
+            ),
+          );
+        } else if (!options.isQuiet) {
+          log(
+            `Sync [Folder]: ${path.resolve(targetDir)} ${dryRun ? "(dry-run)" : ""}`,
+          );
+          log(`Total books in snapshot: ${mergeResult.snapshot.books.length}`);
+          log(`Remote changes applied:  ${mergeResult.appliedRemoteChanges}`);
+          log(`Conflicts encountered:    ${mergeResult.newConflicts.length}`);
+        }
+        return EXIT_CODES.SUCCESS;
+      } finally {
+        await adapter.releaseLock();
+      }
+    } catch (err) {
+      logErr(
+        `Sync folder failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EXIT_CODES.FATAL_ERROR;
+    }
+  }
+
+  if (subCmd === "webdav") {
+    const url = (values.url ? String(values.url) : undefined) ?? inputs[1];
+    const username = values.user ? String(values.user) : undefined;
+    const password = process.env.REFLOWPRESS_WEBDAV_PASSWORD;
+
+    if (!url) {
+      logErr("Error: Missing WebDAV URL. Specify --url <url>");
+      return EXIT_CODES.FATAL_ERROR;
+    }
+
+    if (!password) {
+      logErr(
+        "Error: WebDAV password required in environment variable REFLOWPRESS_WEBDAV_PASSWORD (never pass plaintext passwords via CLI flags).",
+      );
+      return EXIT_CODES.FATAL_ERROR;
+    }
+
+    try {
+      const adapter = new WebdavSyncAdapter({
+        remoteUrl: url,
+        username,
+        password,
+        allowInsecure: false,
+      });
+
+      const remoteSnapshot = await adapter.readSnapshot();
+      const emptyRemoteSnapshot: SyncSnapshot = {
+        manifest: {
+          schemaVersion: 1,
+          bundleId: "remote-webdav-init",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          sourceInstallationId: "remote-webdav",
+          counts: {
+            books: 0,
+            annotations: 0,
+            bookmarks: 0,
+            readingPositions: 0,
+            tombstones: 0,
+            conflicts: 0,
+          },
+        },
+        books: [],
+        annotations: [],
+        bookmarks: [],
+        readingPositions: [],
+        tombstones: [],
+        conflicts: [],
+      };
+
+      const mergeResult = mergeSnapshots(
+        null,
+        localSnapshot,
+        remoteSnapshot ?? emptyRemoteSnapshot,
+      );
+
+      if (!dryRun) {
+        await adapter.writeSnapshot(mergeResult.snapshot);
+        if (catalogPath) {
+          catalog.updatedAt = new Date().toISOString();
+          await saveCatalogFile(catalogPath, catalog);
+        }
+      }
+
+      if (options.isJson) {
+        log(
+          JSON.stringify(
+            {
+              dryRun,
+              newConflicts: mergeResult.newConflicts.length,
+              mergedBooks: mergeResult.snapshot.books.length,
+              appliedRemoteChanges: mergeResult.appliedRemoteChanges,
+              preservedLocalChanges: mergeResult.preservedLocalChanges,
+            },
+            null,
+            2,
+          ),
+        );
+      } else if (!options.isQuiet) {
+        log(
+          `Sync [WebDAV]: ${adapter.getSanitizedUrl()} ${dryRun ? "(dry-run)" : ""}`,
+        );
+        log(`Total books in snapshot: ${mergeResult.snapshot.books.length}`);
+        log(`Remote changes applied:  ${mergeResult.appliedRemoteChanges}`);
+        log(`Conflicts encountered:    ${mergeResult.newConflicts.length}`);
+      }
+      return EXIT_CODES.SUCCESS;
+    } catch (err) {
+      logErr(
+        `Sync webdav failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EXIT_CODES.FATAL_ERROR;
+    }
+  }
+
+  logErr(`Unknown sync target: ${subCmd}. Expected 'folder' or 'webdav'.`);
+  return EXIT_CODES.FATAL_ERROR;
+}
+
+async function runBackup(
+  inputs: readonly string[],
+  values: Record<string, unknown>,
+  options: { isJson: boolean; isQuiet: boolean },
+  log: (m: string) => void,
+  logErr: (m: string) => void,
+): Promise<number> {
+  const outputPath = path.resolve(
+    String(values.output ?? inputs[0] ?? "./reflowpress-backup.json"),
+  );
+  const catalogPath = values.catalog ? String(values.catalog) : undefined;
+  const catalog = await loadCatalogFile(catalogPath);
+  const snapshot = catalogToSnapshot(catalog);
+
+  try {
+    const bundleFiles = serializeSyncBundle(snapshot);
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(
+      outputPath,
+      JSON.stringify(bundleFiles, null, 2),
+      "utf-8",
+    );
+
+    if (options.isJson) {
+      log(
+        JSON.stringify(
+          {
+            success: true,
+            outputPath,
+            bookCount: snapshot.books.length,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (!options.isQuiet) {
+      log(
+        `Backup bundle saved: ${outputPath} (${snapshot.books.length} publications)`,
+      );
+    }
+    return EXIT_CODES.SUCCESS;
+  } catch (err) {
+    logErr(
+      `Backup failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return EXIT_CODES.FATAL_ERROR;
+  }
+}
+
+async function runRestore(
+  inputs: readonly string[],
+  values: Record<string, unknown>,
+  options: { isJson: boolean; isQuiet: boolean },
+  log: (m: string) => void,
+  logErr: (m: string) => void,
+): Promise<number> {
+  const bundlePath = inputs[0];
+  if (!bundlePath) {
+    logErr(
+      "Error: Missing restore bundle path. Usage: reflowpress restore <bundle-file>",
+    );
+    return EXIT_CODES.FATAL_ERROR;
+  }
+
+  try {
+    const rawBundle = await fs.readFile(path.resolve(bundlePath), "utf-8");
+    const bundleMap = JSON.parse(rawBundle) as Record<string, string>;
+    const remoteSnapshot = deserializeSyncBundle(bundleMap);
+    const catalogPath = values.catalog ? String(values.catalog) : undefined;
+    const catalog = await loadCatalogFile(catalogPath);
+    const localSnapshot = catalogToSnapshot(catalog);
+    const policy =
+      (values.policy as "keep-local" | "keep-remote" | "keep-both") ??
+      "keep-local";
+
+    const plan = createRestorePlan(remoteSnapshot, localSnapshot);
+
+    if (values.preview) {
+      if (options.isJson) {
+        log(JSON.stringify({ preview: true, policy, plan }, null, 2));
+      } else if (!options.isQuiet) {
+        log(`Restore Preview:`);
+        log(
+          `  To add:    ${plan.toAdd.books} books, ${plan.toAdd.annotations} annotations`,
+        );
+        log(
+          `  To update: ${plan.toUpdate.books} books, ${plan.toUpdate.annotations} annotations`,
+        );
+        log(`  Conflicts: ${plan.conflicts.length}`);
+      }
+      return EXIT_CODES.SUCCESS;
+    }
+
+    const { restoredSnapshot, resolvedConflicts } = applyRestore(
+      remoteSnapshot,
+      localSnapshot,
+      { conflictPolicy: policy },
+    );
+
+    if (catalogPath) {
+      catalog.books = restoredSnapshot.books.map((b) => ({
+        id: b.id,
+        title: b.data.title,
+        creator: b.data.author,
+        format: b.data.format,
+        collectionIds: b.data.collections ? [...b.data.collections] : [],
+        tags: b.data.tags ? [...b.data.tags] : [],
+        dateAdded: b.updatedAt,
+        filePath: "",
+        fileSizeBytes: 0,
+        modifiedTimeMs: Date.now(),
+        availability: {
+          exists: false,
+          lastChecked: new Date().toISOString(),
+        },
+      }));
+      catalog.updatedAt = new Date().toISOString();
+      await saveCatalogFile(catalogPath, catalog);
+    }
+
+    if (options.isJson) {
+      log(
+        JSON.stringify(
+          {
+            success: true,
+            policy,
+            restoredBooks: restoredSnapshot.books.length,
+            resolvedConflicts,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (!options.isQuiet) {
+      log(
+        `Restore applied successfully (${restoredSnapshot.books.length} publications, ${resolvedConflicts} conflicts resolved).`,
+      );
+    }
+    return EXIT_CODES.SUCCESS;
+  } catch (err) {
+    logErr(
+      `Restore failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return EXIT_CODES.FATAL_ERROR;
+  }
+}
+
+async function runDevice(
+  inputs: readonly string[],
+  values: Record<string, unknown>,
+  options: { isJson: boolean; isQuiet: boolean },
+  log: (m: string) => void,
+  logErr: (m: string) => void,
+): Promise<number> {
+  const subCmd = inputs[0] ?? "list";
+
+  if (subCmd === "list") {
+    const mountDir = path.resolve(
+      String(values.target ?? inputs[1] ?? process.cwd()),
+    );
+    try {
+      const adapter = new FilesystemDeviceAdapter(mountDir);
+      const devices = await adapter.discover();
+      if (options.isJson) {
+        log(JSON.stringify({ mountDir, devices }, null, 2));
+      } else if (!options.isQuiet) {
+        if (devices.length === 0) {
+          log(`No e-reader device detected at: ${mountDir}`);
+        } else {
+          for (const dev of devices) {
+            log(
+              `Device detected: ${dev.name} (${dev.profile?.id ?? "generic"})`,
+            );
+            log(`  Mount point:  ${dev.mountPoint}`);
+            log(`  Target dir:   ${dev.profile?.booksDirectory ?? "/"}`);
+            log(
+              `  Formats:      ${dev.profile?.supportedFormats.join(", ") ?? "epub, pdf"}`,
+            );
+            if (dev.freeSpaceBytes !== undefined) {
+              log(
+                `  Free space:   ${(dev.freeSpaceBytes / (1024 * 1024)).toFixed(1)} MB`,
+              );
+            }
+          }
+        }
+      }
+      return EXIT_CODES.SUCCESS;
+    } catch (err) {
+      logErr(
+        `Device detection failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EXIT_CODES.FATAL_ERROR;
+    }
+  }
+
+  if (subCmd === "send") {
+    const mountDir = inputs[1];
+    const files = inputs.slice(2);
+    if (!mountDir || files.length === 0) {
+      logErr("Error: Usage: reflowpress device send <device-mount> <files...>");
+      return EXIT_CODES.FATAL_ERROR;
+    }
+
+    try {
+      const adapter = new FilesystemDeviceAdapter(path.resolve(mountDir));
+      const devices = await adapter.discover();
+      const dev = devices[0];
+      if (!dev) {
+        logErr(`Error: No valid device found at mount path '${mountDir}'`);
+        return EXIT_CODES.FATAL_ERROR;
+      }
+
+      const items: TransferItem[] = [];
+      for (const f of files) {
+        const resolved = path.resolve(f);
+        const st = await fs.stat(resolved);
+        const ext = path.extname(resolved).toLowerCase().replace(".", "");
+        items.push({
+          sourcePath: resolved,
+          targetFilename: path.basename(resolved),
+          format: ext === "pdf" ? "pdf" : "epub",
+          byteSize: st.size,
+        });
+      }
+
+      const plan = await adapter.createTransferPlan(items, dev);
+
+      if (values["dry-run"]) {
+        if (options.isJson) {
+          log(JSON.stringify({ dryRun: true, plan }, null, 2));
+        } else if (!options.isQuiet) {
+          log(
+            `Transfer plan (dry-run): ${plan.items.length} items to ${dev.name}`,
+          );
+          for (const it of plan.items) {
+            log(
+              `  - ${path.basename(it.sourcePath)} -> ${it.targetPath} [${it.status}]`,
+            );
+          }
+        }
+        return EXIT_CODES.SUCCESS;
+      }
+
+      const result = await adapter.executeTransfer(plan);
+
+      if (options.isJson) {
+        log(JSON.stringify(result, null, 2));
+      } else if (!options.isQuiet) {
+        log(
+          `Transferred: ${result.successful}, Skipped: ${result.skipped}, Failed: ${result.failed}`,
+        );
+        if (result.errors.length > 0) {
+          for (const err of result.errors) {
+            logErr(`  Error: ${err.path}: ${err.error}`);
+          }
+        }
+      }
+      return result.failed === 0
+        ? EXIT_CODES.SUCCESS
+        : EXIT_CODES.PARTIAL_FAILURE;
+    } catch (err) {
+      logErr(
+        `Device transfer failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EXIT_CODES.FATAL_ERROR;
+    }
+  }
+
+  logErr(`Unknown device subcommand: ${subCmd}. Expected 'list' or 'send'.`);
+  return EXIT_CODES.FATAL_ERROR;
 }
 
 async function runInspect(

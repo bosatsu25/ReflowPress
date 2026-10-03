@@ -19,7 +19,11 @@
     "@reflowpress/export": "workspace:*",
     "@reflowpress/pdf": "workspace:*",
     "@reflowpress/quality": "workspace:*",
-    "@reflowpress/repair": "workspace:*"
+    "@reflowpress/repair": "workspace:*",
+    "@reflowpress/library": "workspace:*",
+    "@reflowpress/opds": "workspace:*",
+    "@reflowpress/sync": "workspace:*",
+    "@reflowpress/device": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",

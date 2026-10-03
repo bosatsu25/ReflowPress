@@ -1,0 +1,25 @@
+{
+  "name": "@reflowpress/opds",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OPDS 2.0 catalog feed generator, safe remote client, and read-only local server for ReflowPress",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true });\""
+  },
+  "dependencies": {
+    "@reflowpress/core": "workspace:*",
+    "@reflowpress/library": "workspace:*",
+    "@xmldom/xmldom": "^0.9.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "typescript": "^5.5.4"
+  }
+}

@@ -20,6 +20,9 @@
       "@reflowpress/validation": ["./packages/validation/src/index.ts"],
       "@reflowpress/quality": ["./packages/quality/src/index.ts"],
       "@reflowpress/repair": ["./packages/repair/src/index.ts"],
+      "@reflowpress/opds": ["./packages/opds/src/index.ts"],
+      "@reflowpress/sync": ["./packages/sync/src/index.ts"],
+      "@reflowpress/device": ["./packages/device/src/index.ts"],
       "@reflowpress/cli": ["./apps/cli/src/index.ts"]
     }
   },

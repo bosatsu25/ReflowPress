@@ -1,0 +1,26 @@
+{
+  "name": "@reflowpress/sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Portable sync bundle, 3-way conflict-aware merge engine, folder adapter, and WebDAV adapter for ReflowPress",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true });\""
+  },
+  "dependencies": {
+    "@reflowpress/annotations": "workspace:*",
+    "@reflowpress/core": "workspace:*",
+    "@reflowpress/library": "workspace:*",
+    "@reflowpress/reader": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "typescript": "^5.5.4"
+  }
+}

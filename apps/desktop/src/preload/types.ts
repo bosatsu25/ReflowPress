@@ -12,6 +12,8 @@ import type {
 } from "@reflowpress/annotations";
 import type { HealthReport } from "@reflowpress/quality";
 import type { RepairResult } from "@reflowpress/repair";
+import type { RestorePlan } from "@reflowpress/sync";
+import type { DeviceDescriptor, TransferResult } from "@reflowpress/device";
 
 export interface LoadedPublicationResult {
   readonly kind: "epub" | "pdf";
@@ -83,6 +85,51 @@ export interface DesktopBridge {
     filePath: string,
     options?: { apply?: boolean; ruleId?: string; outputDir?: string },
   ): Promise<RepairResult>;
+  // Interoperability API
+  opdsStart(options?: {
+    port?: number;
+    allowLan?: boolean;
+  }): Promise<{ url: string; port: number; isLan: boolean }>;
+  opdsStop(): Promise<void>;
+  opdsGetStatus(): Promise<{
+    running: boolean;
+    url?: string | undefined;
+    port?: number | undefined;
+    isLan?: boolean | undefined;
+  }>;
+  syncFolder(
+    targetDir: string,
+    options?: { dryRun?: boolean },
+  ): Promise<{
+    appliedRemote: number;
+    preservedLocal: number;
+    conflicts: number;
+    totalBooks: number;
+  }>;
+  syncWebdav(
+    url: string,
+    username?: string,
+    password?: string,
+    options?: { dryRun?: boolean },
+  ): Promise<{
+    appliedRemote: number;
+    preservedLocal: number;
+    conflicts: number;
+    totalBooks: number;
+  }>;
+  createBackup(
+    outputPath: string,
+  ): Promise<{ success: boolean; outputPath: string; count: number }>;
+  previewRestore(bundlePath: string): Promise<RestorePlan>;
+  applyRestore(
+    bundlePath: string,
+    policy?: "keep-local" | "keep-remote" | "keep-both",
+  ): Promise<{ restoredBooks: number; resolvedConflicts: number }>;
+  discoverDevices(targetDir?: string): Promise<readonly DeviceDescriptor[]>;
+  transferToDevice(
+    targetMount: string,
+    bookIds: string[],
+  ): Promise<TransferResult>;
 }
 
 declare global {

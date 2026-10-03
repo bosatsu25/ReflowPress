@@ -34,6 +34,7 @@ flowchart TD
         LIBRARY[Library Catalog<br/>implemented in 0.4]
         SEARCH[Search Index<br/>implemented in 0.5]
         EXPORT[Export Engine<br/>PDF / HTML / Markdown<br/>implemented in 0.7]
+        INTEROP[Interoperability & Sync<br/>@reflowpress/opds / sync / device<br/>implemented in 0.9]
     end
 
     SOURCE --> INSPECTOR --> HEALTH
@@ -45,6 +46,8 @@ flowchart TD
     ANNOTATION --> LIBRARY
     NORMALIZED --> SEARCH
     NORMALIZED --> EXPORT
+    LIBRARY --> INTEROP
+    NORMALIZED --> INTEROP
 ```
 
 ### Component Responsibilities
@@ -58,6 +61,7 @@ flowchart TD
 7. **Search Index**: Constructs indexed or runtime full-text search across chapters, publications, and annotations.
 8. **Export Engine**: Converts the normalized publication into PDF (via CSS Paged Media rendering), clean HTML, or Markdown.
 9. **Validation Gate**: Asserts that generated outputs meet strict quality requirements before being marked as successful.
+10. **Interoperability & Data Portability**: Exposes OPDS 2.0 streaming catalog, multi-device 3-way synchronization, and hardware e-reader transfers with zero cloud lock-ins.
 
 ---
 
