@@ -92,7 +92,7 @@ The test suite applies standard test design techniques across the Inspector, Loa
 
 ---
 
-## Test Suites in `tests/unit` (104 Tests Total Across 12 Suites)
+## Test Suites in `tests/unit` (111 Tests Total Across 13 Suites)
 
 1. **Contract Tests** (`tests/unit/contracts.test.ts`, 3 tests)
 2. **EPUB Inspector Test Suite** (`tests/unit/epub-inspector.test.ts`, 19 tests)
@@ -106,14 +106,16 @@ The test suite applies standard test design techniques across the Inspector, Loa
 10. **Annotations Persistence & Recovery Test Suite** (`tests/unit/annotations-persistence.test.ts`, 5 tests)
 11. **Annotations Export & Import Test Suite** (`tests/unit/annotations-export-import.test.ts`, 6 tests)
 12. **In-Book Search Test Suite** (`tests/unit/search.test.ts`, 11 tests)
+13. **Japanese Typography Test Suite** (`tests/unit/typography.test.ts`, 7 tests)
 
 ---
 
-## Playwright Desktop E2E Suites (`tests/e2e`, 15 Tests Total)
+## Playwright Desktop E2E Suites (`tests/e2e`, 19 Tests Total)
 
 1. **Reader MVP Desktop E2E** (`tests/e2e/reader-desktop.spec.ts`, 5 tests)
 2. **Library MVP Desktop E2E** (`tests/e2e/library-desktop.spec.ts`, 5 tests)
 3. **Reading Tools Desktop E2E** (`tests/e2e/reading-tools-desktop.spec.ts`, 5 tests)
+4. **Japanese Typography & Accessibility Desktop E2E** (`tests/e2e/japanese-accessibility-desktop.spec.ts`, 4 tests)
 
 ---
 
@@ -129,7 +131,7 @@ The test suite applies standard test design techniques across the Inspector, Loa
    pnpm audit --prod
    ```
 2. **CI Gates**:
-   - `verify`: Runs on `ubuntu-latest` running lint, typecheck, vitest (104 tests), and build.
-   - `desktop-e2e`: Runs on `ubuntu-latest` under `xvfb-run -a pnpm test:e2e` (15 tests) with automated failure artifact capture.
+   - `verify`: Runs on `ubuntu-latest` running lint, typecheck, vitest (111 tests), and build.
+   - `desktop-e2e`: Runs on `ubuntu-latest` under `xvfb-run -a pnpm test:e2e` (19 tests) with automated failure artifact capture and axe-core accessibility regression scanning.
 3. **Deterministic CI Pipeline**: GitHub Actions runs on `ubuntu-latest` with Node.js 22, verifying formatting, strict typing, unit tests, and workspace builds on every PR and push to `main`.
 4. **Golden Master Stability**: When golden master and visual regression suites are introduced in Milestone 0.8, raw byte comparisons will be avoided in favor of normalized structural comparisons to prevent false positives from timestamp or compression differences.

@@ -115,23 +115,25 @@ flowchart TD
 
 ### Milestone 0.6: Japanese Typography & Accessibility
 
-- **Status**: **Next Priority**
-- **Goal**: _World-class Japanese document support and comprehensive accessibility._
-- **Scope**:
-  - Vertical text layout support (`writing-mode: vertical-rl`) with vertical paging.
-  - Ruby annotations rendering (`<ruby>`, `<rt>`, `<rp>`) across horizontal and vertical modes.
-  - Japanese line-breaking rules (Kinsoku shori: prohibiting line-initial/line-terminal symbols).
-  - Tate-chu-yoko (horizontal-in-vertical text for digits/acronyms).
-  - Comprehensive keyboard navigation shortcuts for all reader interactions.
-  - Screen reader semantics, ARIA attributes, and accessible contrast ratios.
-  - Right-to-Left (RTL) reading order planning (Arabic, Hebrew).
-  - MathML rendering support evaluation.
+- **Status**: **Complete**
+- **Goal**: _Natural Japanese vertical/horizontal ebook reading and baseline WCAG 2.2 AA accessibility._
+- **Deliverables**:
+  - `@reflowpress/typography`: Pure domain package providing typography models, reading flow resolution, writing mode normalization, strict kinsoku CSS generation, and non-destructive Tate-chu-yoko (TCY) text transformation.
+  - Standards-based Chromium CSS Writing Modes (`vertical-rl`), CSS Text 3 line breaking (`line-break: strict;`), and word breaking (`word-break: normal;`).
+  - Native `<ruby>`, `<rt>`, and `<rp>` rendering support across horizontal and vertical layouts.
+  - Tate-chu-yoko (TCY) support: publisher-authored (`.tcy`, `-epub-text-combine`) and idempotent, non-destructive auto-assist wrapping 1–2 digit ASCII numbers in vertical text without altering textContent or invalidating W3C annotation offsets.
+  - Writing-mode aware navigation: axis-aware keyboard controls (leftward column progression via `ArrowLeft`, `PageDown`, `Space`), horizontal stepping in vertical-rl layout, and dynamic reader settings (Auto/Author, Horizontal, Vertical).
+  - Comprehensive keyboard accessibility: full Tab order, visible focus rings, dialog focus trap with Tab/Shift+Tab wrapping, Escape dismissal, and focus restoration to opener button.
+  - Screen reader support: polite `aria-live` status announcements for page, chapter, search, and setting changes, ARIA dialog and drawer landmarks, valid `aria-controls` references, and descriptive `aria-label`s.
+  - Automated accessibility auditing: `@axe-core/playwright` integration scanning Library, Reader, Settings modal, and Reading Tools drawer with 0 critical or serious violations.
+  - Architectural documentation: [ADR 0006: Japanese Typography and Accessibility Architecture](adr/0006-japanese-typography-and-accessibility.md).
+  - Automated test suite: 111 unit tests across 13 suites + 19 Playwright desktop E2E tests (100% pass rate).
 
 ---
 
 ### Milestone 0.7: Export Workbench
 
-- **Status**: Planned
+- **Status**: **Next Priority**
 - **Goal**: _Transform publications into beautiful, reusable documents._
 - **Scope**:
   - EPUB to PDF conversion engine utilizing CSS Paged Media.
