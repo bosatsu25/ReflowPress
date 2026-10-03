@@ -52,7 +52,10 @@ export function formatTimestamp(date: Date): string {
 export async function generateDeterministicFilename(
   options: FilenameOptions,
 ): Promise<GeneratedFilename> {
-  // Normalize path separators first so filename generation is independent of the host OS.\n  // This allows Windows-style input paths to produce the same basename on Linux CI and vice versa.\n  const normalizedSourcePath = options.sourcePath.replace(/\\\\/g, "/");\n  const rawBase = path.posix.basename(normalizedSourcePath);
+  // Normalize path separators first so filename generation is independent of the host OS.
+  // This allows Windows-style input paths to produce the same basename on Linux CI and vice versa.
+  const normalizedSourcePath = options.sourcePath.replace(/\\/g, "/");
+  const rawBase = path.posix.basename(normalizedSourcePath);
   const extIndex = rawBase.lastIndexOf(".");
   const rawStem = extIndex > 0 ? rawBase.slice(0, extIndex) : rawBase;
   const safeStem = sanitizeStem(rawStem);
