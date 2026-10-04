@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCli, EXIT_CODES } from "../../apps/cli/src/main.js";
+import { REFLOWPRESS_VERSION } from "../../packages/core/src/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,7 +43,9 @@ describe("CLI (runCli)", () => {
     });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdoutLogs.join("\n")).toContain("ReflowPress CLI v0.1.0");
+    expect(stdoutLogs.join("\n")).toContain(
+      `ReflowPress CLI v${REFLOWPRESS_VERSION}`,
+    );
   });
 
   it("returns fatal error when no arguments or files are specified", async () => {
