@@ -1,5 +1,6 @@
 import { readFile, open, rename, mkdir } from "node:fs/promises";
 import path from "node:path";
+import { UpgradeRequiredError } from "@reflowpress/core";
 import type {
   AnnotationRepository,
   AnnotationStore,
@@ -28,10 +29,11 @@ export class JsonAnnotationRepository implements AnnotationRepository {
         throw new Error("Invalid annotation store JSON structure");
       }
 
-      if (parsed.schemaVersion && parsed.schemaVersion > 1) {
-        throw new Error(
-          `Unsupported annotation schema version: ${parsed.schemaVersion}. Please upgrade ReflowPress.`,
-        );
+      const schemaVersion =
+        typeof parsed.schemaVersion === "number" ? parsed.schemaVersion : 1;
+
+      if (schemaVersion > 1) {
+        throw new UpgradeRequiredError("annotation", 1, schemaVersion);
       }
 
       if (!Array.isArray(parsed.annotations)) {
@@ -39,21 +41,17 @@ export class JsonAnnotationRepository implements AnnotationRepository {
       }
 
       return {
-        schemaVersion: parsed.schemaVersion ?? 1,
+        schemaVersion,
         annotations: parsed.annotations,
       };
     } catch (err: unknown) {
+      if (err instanceof UpgradeRequiredError) {
+        throw err;
+      }
+
       const error = err as NodeJS.ErrnoException;
       if (error && error.code === "ENOENT") {
         return createDefaultAnnotationStore();
-      }
-
-      // Check if schema version is too new: do not overwrite!
-      if (
-        error instanceof Error &&
-        error.message.includes("Unsupported annotation schema version")
-      ) {
-        throw error;
       }
 
       // File is corrupt: quarantine it

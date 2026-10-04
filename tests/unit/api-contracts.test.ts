@@ -18,9 +18,12 @@ import * as Sync from "../../packages/sync/src/index.js";
 import * as Device from "../../packages/device/src/index.js";
 
 describe("Public API Contracts Freeze (@reflowpress/*)", () => {
-  it("@reflowpress/core exports canonical version", () => {
+  it("@reflowpress/core exports canonical version and migration framework", () => {
     expect(Core.REFLOWPRESS_VERSION).toBeDefined();
     expect(typeof Core.REFLOWPRESS_VERSION).toBe("string");
+    expect(Core.UpgradeRequiredError).toBeDefined();
+    expect(Core.CorruptDataError).toBeDefined();
+    expect(Core.MigrationRunner).toBeDefined();
   });
 
   it("@reflowpress/epub exports inspection, loading, navigation, and media-overlay parsers", () => {
