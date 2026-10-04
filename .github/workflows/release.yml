@@ -1,0 +1,104 @@
+name: Release Pipeline
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run build pipeline without publishing release"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate-validation:
+    name: Release Gate Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install
+      - run: pnpm exec playwright install chromium --with-deps
+      - name: Run Release Check Aggregator
+        run: pnpm release:check
+
+  build-artifacts:
+    name: Build Distribution Packages (${{ matrix.os }})
+    needs: gate-validation
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            command: package:win
+          - os: macos-latest
+            command: package:mac
+          - os: ubuntu-latest
+            command: package:linux
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install
+      - run: pnpm build
+      - name: Inspect Built Renderer Bundle
+        run: pnpm analyze:bundle
+      - name: Package Platform Distribution Binaries
+        run: pnpm run ${{ matrix.command }}
+      - name: Verify Packaged Artifacts and Distribution Packages
+        run: node scripts/smoke-test-package.js --assert-artifacts
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: reflowpress-dist-${{ matrix.os }}
+          path: release-artifacts/
+          retention-days: 14
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.dry_run != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          pattern: reflowpress-dist-*
+          merge-multiple: true
+      - name: Generate Cryptographic Checksums
+        run: node scripts/generate-checksums.js
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/*
+          body_path: docs/releases/1.0.0.md

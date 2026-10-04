@@ -84,3 +84,12 @@ export interface Renderer {
     options?: RenderOptions,
   ): Promise<PdfDocument>;
 }
+
+export { REFLOWPRESS_VERSION } from "./version.js";
+export {
+  UpgradeRequiredError,
+  CorruptDataError,
+  type Migration,
+  type MigrationRunnerOptions,
+  MigrationRunner,
+} from "./migration.js";

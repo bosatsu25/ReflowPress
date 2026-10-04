@@ -46,6 +46,7 @@ import { HealthModal } from "./components/HealthModal.js";
 import { InteroperabilityModal } from "./components/InteroperabilityModal.js";
 import { EmptyState } from "./components/EmptyState.js";
 import { ErrorBanner } from "./components/ErrorBanner.js";
+import { RecoveryBanner } from "./components/RecoveryBanner.js";
 import { LibraryView } from "./components/LibraryView.js";
 import { ReadingToolsDrawer } from "./components/ReadingToolsDrawer.js";
 import { SelectionToolbar } from "./components/SelectionToolbar.js";
@@ -114,6 +115,10 @@ export const App: React.FC = () => {
   const [activeToolsTab, setActiveToolsTab] = useState<
     "search" | "bookmarks" | "highlights" | "notes"
   >("search");
+  const [recoveryPrompt, setRecoveryPrompt] = useState<{
+    filePath: string;
+    title?: string;
+  } | null>(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -739,6 +744,23 @@ export const App: React.FC = () => {
       })
       .catch(() => {});
 
+    desktopBridge
+      .getCrashRecoveryStatus?.()
+      .then((status) => {
+        if (
+          !isCancelled &&
+          status &&
+          status.crashedLastSession &&
+          status.lastActiveSession?.lastActivePublication
+        ) {
+          setRecoveryPrompt({
+            filePath: status.lastActiveSession.lastActivePublication.filePath,
+            title: status.lastActiveSession.lastActivePublication.title,
+          });
+        }
+      })
+      .catch(() => {});
+
     const unsubscribe = desktopBridge.onOpenInitialFile?.((path) => {
       loadFile(path);
     });
@@ -1057,6 +1079,22 @@ export const App: React.FC = () => {
         onSwitchToLibrary={() => setViewMode("library")}
         onSwitchToReader={() => setViewMode("reader")}
       />
+
+      {recoveryPrompt && (
+        <RecoveryBanner
+          publicationTitle={recoveryPrompt.title}
+          onRestore={async () => {
+            const fileToOpen = recoveryPrompt.filePath;
+            setRecoveryPrompt(null);
+            await desktopBridge.clearCrashRecoveryStatus?.();
+            await loadFile(fileToOpen);
+          }}
+          onDismiss={async () => {
+            setRecoveryPrompt(null);
+            await desktopBridge.clearCrashRecoveryStatus?.();
+          }}
+        />
+      )}
 
       {errorMessage && (
         <ErrorBanner

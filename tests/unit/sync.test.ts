@@ -6,6 +6,7 @@ import {
   computePortablePublicationId,
   mergeSnapshots,
   FolderSyncAdapter,
+  DEFAULT_SYNC_LOCK_TIMEOUT_MS,
   serializeSyncBundle,
   deserializeSyncBundle,
   createRestorePlan,
@@ -251,6 +252,10 @@ describe("Sync Engine & Data Portability (@reflowpress/sync)", () => {
   });
 
   describe("FolderSyncAdapter", () => {
+    it("defines default lock timeout of 15 minutes", () => {
+      expect(DEFAULT_SYNC_LOCK_TIMEOUT_MS).toBe(15 * 60 * 1000);
+    });
+
     it("writes and reads snapshot bundle atomically", async () => {
       const adapter = new FolderSyncAdapter({ syncFolderPath: tempDir });
       const snapshot: SyncSnapshot = {

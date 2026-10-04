@@ -1,6 +1,6 @@
 {
   "name": "@reflowpress/sync",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Portable sync bundle, 3-way conflict-aware merge engine, folder adapter, and WebDAV adapter for ReflowPress",
   "type": "module",

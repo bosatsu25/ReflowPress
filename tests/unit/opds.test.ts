@@ -116,6 +116,35 @@ describe("OPDS 2.0 Catalog & Server (@reflowpress/opds)", () => {
       expect(parsed.publications?.[0]?.metadata.title).toBe("Remote Book 1");
     });
 
+    it("parses OPDS 2.0 links with array of rel values (e.g. open-access)", () => {
+      const feedJson = JSON.stringify({
+        metadata: { title: "Open Access Catalog" },
+        links: [{ rel: "self", href: "https://example.com/opds" }],
+        publications: [
+          {
+            metadata: { title: "Open Access Book" },
+            links: [
+              {
+                rel: [
+                  "http://opds-spec.org/acquisition",
+                  "http://opds-spec.org/acquisition/open-access",
+                ],
+                href: "https://example.com/books/open.epub",
+                type: "application/epub+zip",
+              },
+            ],
+          },
+        ],
+      });
+
+      const parsed = parseOpdsFeed(feedJson);
+      const link = parsed.publications?.[0]?.links[0];
+      expect(Array.isArray(link?.rel)).toBe(true);
+      expect(link?.rel).toContain(
+        "http://opds-spec.org/acquisition/open-access",
+      );
+    });
+
     it("parses legacy OPDS 1.2 Atom XML fallback", () => {
       const atomXml = `<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">

@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   verify:
+    name: Release Gate Verification
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,13 +21,50 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
-      - run: pnpm exec playwright install chromium
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
+      - run: pnpm exec playwright install chromium --with-deps
+      - name: Run Release Check Aggregator
+        run: pnpm release:check
+
+  package-matrix:
+    name: Package Matrix (${{ matrix.os }})
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            command: package:win
+          - os: macos-latest
+            command: package:mac
+          - os: ubuntu-latest
+            command: package:linux
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install
       - run: pnpm build
+      - name: Package Platform Distribution Binaries
+        run: pnpm run ${{ matrix.command }}
+      - name: Verify Packaged Artifacts and Distribution Packages
+        run: node scripts/smoke-test-package.js --assert-artifacts
+      - name: Upload PR Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: reflowpress-pr-dist-${{ matrix.os }}
+          path: release-artifacts/
+          retention-days: 7
 
   desktop-e2e:
+    name: Desktop E2E Tests
     runs-on: ubuntu-latest
     needs: verify
     timeout-minutes: 10

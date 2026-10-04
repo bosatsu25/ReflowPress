@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { inspectEpubHealth } from "@reflowpress/quality";
+import { REFLOWPRESS_VERSION } from "@reflowpress/core";
 import * as yauzl from "yauzl";
 import type { RepairPlan, RepairProvenance, RepairResult } from "./models.js";
 import { buildCanonicalEpubZip, type ZipOutputEntry } from "./rewriter.js";
@@ -162,7 +163,7 @@ export async function executeRepair(
       const sourceBuf = await readFile(sourcePath);
       const outputBuf = await readFile(finalOutputPath);
       const provenance: RepairProvenance = {
-        toolVersion: options.toolVersion ?? "0.1.0",
+        toolVersion: options.toolVersion ?? REFLOWPRESS_VERSION,
         timestamp: new Date().toISOString(),
         sourceSha256: sha256(sourceBuf),
         outputSha256: sha256(outputBuf),

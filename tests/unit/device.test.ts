@@ -23,12 +23,19 @@ describe("E-Reader Device Transfer (@reflowpress/device)", () => {
   });
 
   describe("detectDeviceProfile", () => {
-    it("detects Kindle profile when documents/ directory exists", async () => {
+    it("detects Kindle profile when documents/ and system/ directories exist", async () => {
       await fs.mkdir(path.join(tempMount, "documents"), { recursive: true });
+      await fs.mkdir(path.join(tempMount, "system"), { recursive: true });
       const profile = await detectDeviceProfile(tempMount);
       expect(profile.id).toBe("kindle");
       expect(profile.booksDirectory).toBe("documents");
       expect(profile.supportedFormats).toContain("pdf");
+    });
+
+    it("falls back to generic profile when only documents/ exists without Kindle markers", async () => {
+      await fs.mkdir(path.join(tempMount, "documents"), { recursive: true });
+      const profile = await detectDeviceProfile(tempMount);
+      expect(profile.id).toBe("generic");
     });
 
     it("detects Kobo profile when .kobo/ directory exists", async () => {

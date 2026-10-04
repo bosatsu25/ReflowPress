@@ -1,5 +1,6 @@
 import { readFile, rename, mkdir, open, stat } from "node:fs/promises";
 import path from "node:path";
+import { UpgradeRequiredError } from "@reflowpress/core";
 import {
   type LibraryCatalog,
   type LibraryRepository,
@@ -20,10 +21,24 @@ export class JsonLibraryRepository implements LibraryRepository {
       const data = await readFile(this.filePath, "utf8");
       const parsed = JSON.parse(data) as Partial<LibraryCatalog>;
 
+      if (typeof parsed !== "object" || parsed === null) {
+        await this.quarantineCorruptFile();
+        return createDefaultCatalog();
+      }
+
+      const incomingVersion =
+        typeof parsed.schemaVersion === "number" ? parsed.schemaVersion : 1;
+
+      if (incomingVersion > CURRENT_SCHEMA_VERSION) {
+        throw new UpgradeRequiredError(
+          "Library Catalog",
+          CURRENT_SCHEMA_VERSION,
+          incomingVersion,
+        );
+      }
+
       if (
-        parsed &&
-        typeof parsed === "object" &&
-        parsed.schemaVersion === CURRENT_SCHEMA_VERSION &&
+        incomingVersion === CURRENT_SCHEMA_VERSION &&
         Array.isArray(parsed.books) &&
         Array.isArray(parsed.collections)
       ) {
@@ -34,6 +49,10 @@ export class JsonLibraryRepository implements LibraryRepository {
       await this.quarantineCorruptFile();
       return createDefaultCatalog();
     } catch (err: unknown) {
+      if (err instanceof UpgradeRequiredError) {
+        throw err;
+      }
+
       const isMissing =
         err !== null &&
         typeof err === "object" &&
