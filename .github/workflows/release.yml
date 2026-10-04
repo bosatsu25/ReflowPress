@@ -13,7 +13,7 @@ on:
         default: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   gate-validation:
@@ -29,16 +29,25 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
-      - run: pnpm exec playwright install chromium
-      - run: pnpm release:check
+      - run: pnpm exec playwright install chromium --with-deps
+      - name: Run Release Check Aggregator
+        run: pnpm release:check
 
   build-artifacts:
-    name: Build Distribution Packages
+    name: Build Distribution Packages (${{ matrix.os }})
     needs: gate-validation
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: windows-latest
+            command: package:win
+          - os: macos-latest
+            command: package:mac
+          - os: ubuntu-latest
+            command: package:linux
     runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -52,17 +61,10 @@ jobs:
       - run: pnpm build
       - name: Inspect Built Renderer Bundle
         run: pnpm analyze:bundle
-      - name: Package Windows Binary
-        if: matrix.os == 'windows-latest'
-        run: pnpm package:win
-      - name: Package macOS Binary
-        if: matrix.os == 'macos-latest'
-        run: pnpm package:mac
-      - name: Package Linux Binary
-        if: matrix.os == 'ubuntu-latest'
-        run: pnpm package:linux
-      - name: Verify Packaged Artifacts Smoke
-        run: pnpm smoke:package
+      - name: Package Platform Distribution Binaries
+        run: pnpm run ${{ matrix.command }}
+      - name: Verify Packaged Artifacts and Distribution Packages
+        run: node scripts/smoke-test-package.js --assert-artifacts
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -74,6 +76,8 @@ jobs:
     name: Publish GitHub Release
     needs: build-artifacts
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.dry_run != 'true'
     steps:
       - uses: actions/checkout@v4
