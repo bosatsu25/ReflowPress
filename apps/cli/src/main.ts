@@ -1034,6 +1034,12 @@ async function runInspect(
         `Repairable: ${report.summary.safeRepairableCount} safe-auto, ${report.summary.reviewRequiredCount} review-required, ${report.summary.manualCount} manual`,
       );
 
+      if (report.mediaOverlays?.hasMediaOverlays) {
+        log(
+          `Media Overlays: ${report.mediaOverlays.documentCount} document(s), duration: ${report.mediaOverlays.totalDurationSeconds.toFixed(1)}s, missing audio: ${report.mediaOverlays.missingAudioFiles.length}`,
+        );
+      }
+
       if (report.findings.length > 0) {
         log("\nDiagnostics:");
         for (const f of report.findings) {

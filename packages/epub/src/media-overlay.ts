@@ -24,6 +24,7 @@ export interface MediaOverlayDocument {
 export interface PublicationMediaOverlaysReport {
   readonly hasMediaOverlays: boolean;
   readonly totalDurationSeconds: number;
+  readonly documentCount: number;
   readonly documents: readonly MediaOverlayDocument[];
   readonly missingAudioFiles: readonly string[];
 }

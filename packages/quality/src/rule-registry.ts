@@ -375,6 +375,30 @@ export const RULE_REGISTRY: ReadonlyMap<string, RuleDefinition> = new Map<
     },
   ],
   [
+    "EPUB-OVERLAY-001",
+    {
+      id: "EPUB-OVERLAY-001",
+      title: "Media Overlays audio file not found",
+      category: "resource",
+      defaultSeverity: "warning",
+      defaultRepairability: "manual",
+      description:
+        "An audio file referenced in a SMIL 3.0 Media Overlay document does not exist in the EPUB archive.",
+    },
+  ],
+  [
+    "EPUB-OVERLAY-002",
+    {
+      id: "EPUB-OVERLAY-002",
+      title: "Invalid Media Overlay SMIL syntax or reference",
+      category: "resource",
+      defaultSeverity: "error",
+      defaultRepairability: "manual",
+      description:
+        "A SMIL Media Overlay document contains invalid XML or references an invalid element structure.",
+    },
+  ],
+  [
     "PDF-GEOM-002",
     {
       id: "PDF-GEOM-002",
