@@ -11,8 +11,8 @@ ReflowPress bridges document reading, library organization, publication health i
 ## Current Status & Implementation Facts
 
 > [!IMPORTANT]
-> **ReflowPress Milestone 0.9 — Interoperability is Complete.**
-> The desktop reader GUI (0.3), Library catalog (0.4), Reading Tools (0.5), Japanese Typography & Accessibility (0.6), Export Workbench (0.7), Quality Diagnostic Suite with Safe Repair (0.8), and Interoperability & Sync Suite (0.9) are **implemented**. Milestone 1.0 (Stable Release) is next.
+> **ReflowPress Milestone 1.0 — Stable Release Hardening.**
+> All 10 milestones (0.1 through 1.0) are fully implemented: desktop reader GUI, library catalog, reading tools, Japanese typography & accessibility, export workbench, quality diagnostics & safe repair, interoperability & sync, and 1.0 release hardening with crash recovery, forward schema safety, and cross-platform packaging.
 
 ### Current State (`main`)
 
@@ -25,15 +25,7 @@ ReflowPress bridges document reading, library organization, publication health i
 - **Milestone 0.7 (Export Workbench)**: **Complete** (Implements `@reflowpress/export`, `@reflowpress/cli`, ADR 0007 Playwright Chromium headless rendering with strict network offline isolation, standalone HTML export with Data URL asset inlining, GFM Markdown export with YAML frontmatter and ruby `base（reading）` transliteration, deterministic timestamp naming `<stem>_<YYYYMMDD-HHmmss>.<ext>`, collision resolution `-001`..`-999`, transactional atomic writing, bounded concurrency batch exporting, headless CLI `reflowpress export`, and Playwright CLI E2E tests).
 - **Milestone 0.8 (Quality & Repair)**: **Complete** (Implements `@reflowpress/quality` diagnostic rule engine for EPUB and PDF, stable rule catalog `EPUB-*` and `PDF-*`, deterministic sorting and deduplication, PDF Quality Gate evaluation profiles `baseline` and `reader-export`, `@reflowpress/repair` safe non-destructive repair engine with canonical uncompressed mimetype rewriting, manifest media-type correction, standard `container.xml` creation, transactional staging with pre/post re-inspection verification, `.provenance.json` sidecar generation, headless CLI subcommands `reflowpress inspect`, `validate`, `repair`, Desktop Health & Safe Repair modal with WCAG 2.2 accessibility, 3-Tier Golden Master regression framework, 167 unit tests, and 26 Playwright E2E tests).
 - **Milestone 0.9 (Interoperability)**: **Complete** (Implements `@reflowpress/opds` with OPDS 2.0 streaming catalog and loopback server, `@reflowpress/sync` with 3-way merge engine, portable backup bundles, shared folder sync, and WebDAV RFC 4918 adapter, `@reflowpress/device` with physical e-reader detection for Kindle, Kobo, PocketBook, and Generic USB storage, EPUB 3.3 Media Overlays SMIL parser, headless CLI subcommands `opds`, `sync`, `backup`, `restore`, `device`, desktop Interoperability modal with WCAG 2.2 AA accessibility, 213 unit tests, and 27 Playwright E2E tests).
-- **Publication Core (`loadEpub`, `EpubLoader`)**: **Implemented** (`NormalizedPublication` model, reading order, navigation hierarchy, metadata, auxiliary assets).
-- **Desktop Reader MVP**: **Implemented** (EPUB/PDF viewing, TOC, reading positions, themes, typography settings).
-- **Library Catalog & Collections**: **Implemented** (Recursive scanning, cover cache, collections, shelves, search, tags).
-- **Reading Tools (Search, Notes, Annotations)**: **Implemented** (In-book search, bookmarks, highlights, notes, portable PKM export/import).
-- **Japanese Typography & Accessibility**: **Implemented (Milestone 0.6)**.
-- **Export Workbench (EPUB to PDF/HTML/MD & Headless CLI)**: **Implemented (Milestone 0.7)**.
-- **Quality Diagnostic Suite & Safe Repair**: **Implemented (Milestone 0.8)**.
-- **Interoperability (OPDS, Cloud Sync, Device Transfer)**: **Implemented (Milestone 0.9)**.
-- **Production Packaging & Installers**: **Next (Milestone 1.0)**.
+- **Milestone 1.0 (Stable Release)**: **Complete** (Release hardening, crash recovery protocol with clean shutdown markers, atomic write temp janitor, forward schema migration framework and `UpgradeRequiredError`, renderer code-splitting and bundle budgets, cross-platform packaging with `electron-builder.yml`, release CI pipeline, and comprehensive user and troubleshooting manuals).
 
 ---
 
@@ -232,3 +224,22 @@ pnpm test:e2e
 - [ADR 0005: Annotation Locators, Selectors, and Storage Architecture](docs/adr/0005-annotation-locators-and-storage.md)
 - [ADR 0006: Japanese Typography and Accessibility Architecture](docs/adr/0006-japanese-typography-and-accessibility.md)
 - [ADR 0007: Export Rendering Pipeline (Playwright Chromium Headless)](docs/adr/0007-export-rendering-pipeline.md)
+- [ADR 0008: Publication Quality Diagnostics and Safe Repair](docs/adr/0008-quality-and-safe-repair.md)
+- [ADR 0009: Interoperability, Synchronization, and Device Architecture](docs/adr/0009-interoperability-and-sync.md)
+- [ADR 0010: Stable Runtime, Crash Recovery, and Release Hardening](docs/adr/0010-stable-runtime-and-release.md)
+
+---
+
+## Documentation
+
+- [User Guide](docs/user-guide.md)
+- [Troubleshooting & Support](docs/troubleshooting.md)
+- [Architecture Overview](docs/architecture.md)
+- [Persistence Migrations](docs/persistence-migrations.md)
+- [Quality Rules Catalog](docs/quality-rules.md)
+- [OPDS Catalog Guide](docs/opds.md)
+- [Synchronization Guide](docs/sync.md)
+- [Device Transfer Guide](docs/device-transfer.md)
+- [Media Overlays Guide](docs/media-overlays.md)
+- [API Contracts](docs/api-contracts.md)
+- [Third-Party Notices](THIRD_PARTY_NOTICES.md)

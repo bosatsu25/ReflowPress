@@ -574,6 +574,29 @@ flowchart TD
 
 ---
 
+## Stable Runtime, Crash Recovery, and Schema Safety (Milestone 1.0)
+
+ReflowPress 1.0 hardens the runtime against ungraceful terminations, forward schema incompatibilities, and disk resource leakage:
+
+1. **Clean Shutdown Marker Protocol**:
+   - Maintains an `.active-session.json` marker containing PID and timestamp during active application runtime.
+   - On graceful exit (`before-quit`), writes a `.clean-shutdown` marker and cleans up the active session marker.
+   - On launch, if an active session is recorded without a `.clean-shutdown` marker, the application identifies that an unexpected shutdown occurred and offers a non-intrusive **Recovery Banner** to restore the user's workspace.
+
+2. **Temporary Artifact Janitor**:
+   - Interrupted atomic file writes can leave behind orphaned `.tmp-*` files.
+   - On application startup, the janitor scans `userData` and cache subdirectories, safely removing all orphaned temporary files.
+
+3. **Forward Schema Safety (`UpgradeRequiredError`)**:
+   - When encountering a library catalog, annotation store, reading state, or sync bundle created with a schema version newer than supported by the running binary, ReflowPress throws `UpgradeRequiredError`.
+   - The file is **never quarantined, truncated, or overwritten**. The user is prompted to upgrade ReflowPress, ensuring complete forward safety.
+
+4. **Multi-Platform Distribution Configuration**:
+   - `electron-builder.yml` packages the application for Windows (nsis/portable x64), macOS (dmg/zip universal/arm64/x64), and Linux (AppImage/deb x64).
+   - Establishes native file associations for `.epub` and `.pdf` and custom protocol handlers (`reflowpress://`).
+
+---
+
 ## Security and Privacy Design
 
 - **Untrusted Input**: Electronic publications downloaded from the web are treated as untrusted bytecode/content.
