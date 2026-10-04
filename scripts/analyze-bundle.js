@@ -8,10 +8,15 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const rendererDistDir = path.resolve(__dirname, "../apps/desktop/dist/renderer/assets");
+const rendererDistDir = path.resolve(
+  __dirname,
+  "../apps/desktop/dist/renderer/assets",
+);
 
 if (!fs.existsSync(rendererDistDir)) {
-  console.error(`Error: Renderer assets directory not found at ${rendererDistDir}. Run 'pnpm build' first.`);
+  console.error(
+    `Error: Renderer assets directory not found at ${rendererDistDir}. Run 'pnpm build' first.`,
+  );
   process.exit(1);
 }
 
@@ -43,13 +48,19 @@ for (const file of files) {
     exceededBudget = true;
   }
 
-  console.log(`- ${file.padEnd(45)} | Raw: ${rawKb.padStart(8)} kB | Gzip: ${gzipKb.padStart(7)} kB | [${status}]`);
+  console.log(
+    `- ${file.padEnd(45)} | Raw: ${rawKb.padStart(8)} kB | Gzip: ${gzipKb.padStart(7)} kB | [${status}]`,
+  );
 }
 
 console.log("\n==================================================");
 if (exceededBudget) {
-  console.error(`FAILED: One or more application JavaScript chunks exceeded the ${CHUNK_BUDGET_KB} kB budget!`);
+  console.error(
+    `FAILED: One or more application JavaScript chunks exceeded the ${CHUNK_BUDGET_KB} kB budget!`,
+  );
   process.exit(1);
 } else {
-  console.log(`PASSED: All application JavaScript chunks within ${CHUNK_BUDGET_KB} kB budget.`);
+  console.log(
+    `PASSED: All application JavaScript chunks within ${CHUNK_BUDGET_KB} kB budget.`,
+  );
 }

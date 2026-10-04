@@ -6,14 +6,14 @@ ReflowPress incorporates open source third-party software components. This docum
 
 ## Summary of Third-Party Dependencies
 
-| Component | License | Project URL | Description / Role |
-| :--- | :--- | :--- | :--- |
-| **react** | MIT | https://react.dev/ | Declarative UI rendering library for desktop application |
-| **react-dom** | MIT | https://react.dev/ | DOM renderer bindings for React |
-| **pdfjs-dist** | Apache-2.0 | https://mozilla.github.io/pdf.js/ | Mozilla PDF rendering engine and text layer extractor |
-| **@xmldom/xmldom** | MIT | https://github.com/xmldom/xmldom | Standard DOMParser and XML serializer for Node.js / browser |
-| **yauzl** | MIT | https://github.com/thejoshwolfe/yauzl | Low-level streaming ZIP / EPUB archive decompression |
-| **playwright** | Apache-2.0 | https://playwright.dev/ | Headless Chromium automation engine for PDF export rendering |
+| Component          | License    | Project URL                           | Description / Role                                           |
+| :----------------- | :--------- | :------------------------------------ | :----------------------------------------------------------- |
+| **react**          | MIT        | https://react.dev/                    | Declarative UI rendering library for desktop application     |
+| **react-dom**      | MIT        | https://react.dev/                    | DOM renderer bindings for React                              |
+| **pdfjs-dist**     | Apache-2.0 | https://mozilla.github.io/pdf.js/     | Mozilla PDF rendering engine and text layer extractor        |
+| **@xmldom/xmldom** | MIT        | https://github.com/xmldom/xmldom      | Standard DOMParser and XML serializer for Node.js / browser  |
+| **yauzl**          | MIT        | https://github.com/thejoshwolfe/yauzl | Low-level streaming ZIP / EPUB archive decompression         |
+| **playwright**     | Apache-2.0 | https://playwright.dev/               | Headless Chromium automation engine for PDF export rendering |
 
 ---
 

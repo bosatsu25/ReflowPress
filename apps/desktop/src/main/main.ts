@@ -27,7 +27,9 @@ function parseInitialFileArgument(): string | null {
   return null;
 }
 
-async function createWindow(crashRecovery: CrashRecoveryManager): Promise<BrowserWindow> {
+async function createWindow(
+  crashRecovery: CrashRecoveryManager,
+): Promise<BrowserWindow> {
   const preloadPath = path.resolve(__dirname, "../preload/preload.cjs");
 
   const window = new BrowserWindow({

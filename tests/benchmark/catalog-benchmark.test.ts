@@ -24,7 +24,14 @@ describe("Catalog Performance Benchmark (Synthetic 1,000-Book Scale)", () => {
 
   function generateSyntheticCatalog(bookCount: number): LibraryCatalog {
     const books: LibraryBook[] = [];
-    const genres = ["Fiction", "Science", "History", "Philosophy", "Art", "Technology"];
+    const genres = [
+      "Fiction",
+      "Science",
+      "History",
+      "Philosophy",
+      "Art",
+      "Technology",
+    ];
 
     for (let i = 1; i <= bookCount; i++) {
       const genre = genres[i % genres.length];
@@ -35,8 +42,11 @@ describe("Catalog Performance Benchmark (Synthetic 1,000-Book Scale)", () => {
         publisher: `ReflowPress Academic Press ${(i % 10) + 1}`,
         language: i % 3 === 0 ? "ja" : "en",
         format: i % 4 === 0 ? "pdf" : "epub",
-        filePath: path.join(tempDir, `books/volume-${i}.${i % 4 === 0 ? "pdf" : "epub"}`),
-        fileSizeBytes: 1024 * 100 + (i * 256),
+        filePath: path.join(
+          tempDir,
+          `books/volume-${i}.${i % 4 === 0 ? "pdf" : "epub"}`,
+        ),
+        fileSizeBytes: 1024 * 100 + i * 256,
         dateAdded: new Date(Date.now() - i * 60000).toISOString(),
         lastOpened: i % 5 === 0 ? new Date().toISOString() : undefined,
         favorite: i % 10 === 0,
@@ -54,8 +64,16 @@ describe("Catalog Performance Benchmark (Synthetic 1,000-Book Scale)", () => {
       books,
       collections: [
         { id: "col-1", name: "Favorites", description: "Top picks" },
-        { id: "col-2", name: "Technical Reference", description: "All computing texts" },
-        { id: "col-3", name: "Japanese Typography", description: "Vertical text collection" },
+        {
+          id: "col-2",
+          name: "Technical Reference",
+          description: "All computing texts",
+        },
+        {
+          id: "col-3",
+          name: "Japanese Typography",
+          description: "Vertical text collection",
+        },
       ],
     };
   }
@@ -85,7 +103,8 @@ describe("Catalog Performance Benchmark (Synthetic 1,000-Book Scale)", () => {
         b.creator?.toLowerCase().includes(query.toLowerCase()),
     );
     const sorted = [...loaded.books].sort(
-      (a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime(),
+      (a, b) =>
+        new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime(),
     );
     const queryDuration = performance.now() - t0Query;
 
@@ -96,10 +115,10 @@ describe("Catalog Performance Benchmark (Synthetic 1,000-Book Scale)", () => {
 
     console.log(
       `\n[Benchmark Results for 1,000 Books]:\n` +
-      `  - Atomic Save:   ${saveDuration.toFixed(2)} ms\n` +
-      `  - Disk Load:     ${loadDuration.toFixed(2)} ms\n` +
-      `  - In-Memory Qry: ${queryDuration.toFixed(2)} ms\n` +
-      `  - Total Read+Qry:${totalLoadAndQueryMs.toFixed(2)} ms (Budget: 1,000 ms)\n`
+        `  - Atomic Save:   ${saveDuration.toFixed(2)} ms\n` +
+        `  - Disk Load:     ${loadDuration.toFixed(2)} ms\n` +
+        `  - In-Memory Qry: ${queryDuration.toFixed(2)} ms\n` +
+        `  - Total Read+Qry:${totalLoadAndQueryMs.toFixed(2)} ms (Budget: 1,000 ms)\n`,
     );
 
     // Assert that total read + query is comfortably under the 1,000ms budget

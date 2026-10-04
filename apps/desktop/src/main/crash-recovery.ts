@@ -26,7 +26,9 @@ export const ACTIVE_SESSION_FILE = ".active-session.json";
  * Sweeps directory recursively or shallowly for orphaned .tmp-* files
  * left behind by interrupted atomic writes.
  */
-export async function cleanupOrphanedTempFiles(dirPath: string): Promise<number> {
+export async function cleanupOrphanedTempFiles(
+  dirPath: string,
+): Promise<number> {
   let cleanedCount = 0;
   try {
     const entries = await readdir(dirPath, { withFileTypes: true });
@@ -79,7 +81,10 @@ export class CrashRecoveryManager {
   async checkCrashAndInitialize(): Promise<CrashRecoveryStatus> {
     await mkdir(this.userDataDir, { recursive: true });
 
-    const cleanShutdownPath = path.join(this.userDataDir, CLEAN_SHUTDOWN_MARKER_FILE);
+    const cleanShutdownPath = path.join(
+      this.userDataDir,
+      CLEAN_SHUTDOWN_MARKER_FILE,
+    );
     const activeSessionPath = path.join(this.userDataDir, ACTIVE_SESSION_FILE);
 
     let cleanShutdownExists = false;
@@ -87,7 +92,7 @@ export class CrashRecoveryManager {
       await readFile(cleanShutdownPath, "utf8");
       cleanShutdownExists = true;
     } catch {
-      cleanShutdownExists = false;
+      // Clean shutdown marker does not exist
     }
 
     let priorSession: ActiveSessionInfo | null = null;
@@ -95,7 +100,7 @@ export class CrashRecoveryManager {
       const activeSessionRaw = await readFile(activeSessionPath, "utf8");
       priorSession = JSON.parse(activeSessionRaw) as ActiveSessionInfo;
     } catch {
-      priorSession = null;
+      // Prior session file does not exist or is invalid
     }
 
     // A crash occurred if a prior active session was recorded but no clean shutdown marker was present
@@ -111,7 +116,9 @@ export class CrashRecoveryManager {
     }
 
     // Clean up any orphaned temporary files
-    const cleanedTempFilesCount = await cleanupOrphanedTempFiles(this.userDataDir);
+    const cleanedTempFilesCount = await cleanupOrphanedTempFiles(
+      this.userDataDir,
+    );
 
     // Save initial active session for this process
     this.currentSession = {
@@ -140,7 +147,10 @@ export class CrashRecoveryManager {
   }
 
   async recordCleanShutdown(): Promise<void> {
-    const cleanShutdownPath = path.join(this.userDataDir, CLEAN_SHUTDOWN_MARKER_FILE);
+    const cleanShutdownPath = path.join(
+      this.userDataDir,
+      CLEAN_SHUTDOWN_MARKER_FILE,
+    );
     const activeSessionPath = path.join(this.userDataDir, ACTIVE_SESSION_FILE);
 
     const markerData = {
@@ -149,7 +159,11 @@ export class CrashRecoveryManager {
     };
 
     try {
-      await writeFile(cleanShutdownPath, JSON.stringify(markerData, null, 2), "utf8");
+      await writeFile(
+        cleanShutdownPath,
+        JSON.stringify(markerData, null, 2),
+        "utf8",
+      );
       await unlink(activeSessionPath);
     } catch {
       // Best-effort shutdown recording

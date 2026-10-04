@@ -7,6 +7,7 @@ Welcome to **ReflowPress**, the free, local-first electronic publication workben
 ## 1. Getting Started
 
 ### Launching the Desktop Application
+
 - **Standard Launch**: Launch ReflowPress from your application menu or run `npx electron apps/desktop/dist/main/main.js`.
 - **Open a Specific Publication**: Pass the file path as an argument or flag:
   ```sh
@@ -14,7 +15,9 @@ Welcome to **ReflowPress**, the free, local-first electronic publication workben
   ```
 
 ### Using the Headless CLI
+
 ReflowPress includes a powerful CLI (`reflowpress`) for automated batch processing, headless exporting, inspection, repair, and synchronization:
+
 ```sh
 # Display help and command options
 reflowpress --help
@@ -25,6 +28,7 @@ reflowpress --help
 ## 2. Reading Workbench
 
 ### Reading Reflowable EPUB Books
+
 - **Navigation**:
   - `ArrowLeft` / `PageUp`: Move to previous page / column.
   - `ArrowRight` / `PageDown`: Move to next page / column.
@@ -39,6 +43,7 @@ reflowpress --help
   - **Margins**: Customizable left/right reading gutters.
 
 ### Japanese Typography (`vertical-rl`)
+
 - ReflowPress provides first-class support for Japanese text layout:
   - **Vertical Writing Mode**: Automatically activates for publications specifying vertical direction (`vertical-rl`), or can be toggled manually.
   - **Ruby Support**: Full native `<ruby>` rendering with `<rt>` and `<rp>` pronunciation guides.
@@ -47,6 +52,7 @@ reflowpress --help
   - **Axis-Aware Navigation**: In vertical writing mode, `ArrowLeft` advances to the next column (progressing right-to-left) and `ArrowRight` retreats to the previous column.
 
 ### Reading Fixed-Layout PDF Documents
+
 - High-fidelity PDF viewing powered by PDF.js with text selection and high-DPI scaling.
 - Zoom controls: 50% to 300% zoom with fit-to-width support.
 - Full keyboard page navigation (`PageUp`, `PageDown`, `Home`, `End`).
@@ -84,6 +90,7 @@ reflowpress --help
 ReflowPress converts EPUB publications into high-fidelity PDFs, standalone single-file HTML archives, and GitHub-Flavored Markdown:
 
 ### Headless CLI Export
+
 ```sh
 # Export single book to PDF with A4 page size
 reflowpress export book.epub --format pdf --page-size A4 --output-dir ./exports
@@ -103,15 +110,18 @@ reflowpress export book.epub --format markdown
 ## 6. Publication Quality & Safe Repair
 
 ### Health Diagnostics
+
 - Press the **Health** button in the Desktop Workbench or run `reflowpress inspect book.epub`.
 - ReflowPress runs automated diagnostic rules (`EPUB-MIME-001`, `EPUB-NAV-001`, `EPUB-MEDIA-001`, `EPUB-OVERLAY-001`, etc.) detecting package defects, missing navigation documents, broken manifest paths, and unreferenced resources.
 
 ### Non-Destructive Safe Repair
+
 - ReflowPress repairs broken EPUBs **without modifying the original file**:
   - Rewrites uncompressed `mimetype` headers to byte offset 38.
   - Synthesizes compliant `META-INF/container.xml` if missing.
   - Corrects non-standard manifest media types.
   - Generates a sidecar `.provenance.json` recording every modified entry, checksum, and diagnostic justification.
+
 ```sh
 # Preview safe repairs without writing changes
 reflowpress repair defective.epub
@@ -125,21 +135,27 @@ reflowpress repair defective.epub --apply --output-dir ./repaired
 ## 7. Interoperability & Sync
 
 ### Local OPDS 2.0 Catalog Server
+
 Stream your local library catalog to OPDS 2.0 compatible readers on your local network (e.g. Moon+ Reader, Panels, Thorium):
+
 ```sh
 # Serve local library catalog on port 8080
 reflowpress opds serve --port 8080 --catalog ./library.json --allow-lan
 ```
 
 ### Shared Folder Synchronization (Syncthing / Dropbox)
+
 Sync reading progress, bookmarks, and collections across multiple computers via a local shared folder:
+
 ```sh
 # Synchronize with shared folder
 reflowpress sync folder --target /path/to/SyncFolder --catalog ./library.json
 ```
 
 ### Hardware E-Reader Device Transfer
+
 Transfer publications directly over USB to Amazon Kindle, Rakuten Kobo, PocketBook, and generic USB ereaders:
+
 ```sh
 # List connected device mount point
 reflowpress device list --target /Volumes/KOBOeReader

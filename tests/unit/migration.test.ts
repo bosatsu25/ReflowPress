@@ -16,7 +16,9 @@ describe("Persistence Migration Framework & Future Schema Safety", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "reflowpress-migration-test-"));
+    tempDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "reflowpress-migration-test-"),
+    );
   });
 
   afterEach(async () => {
@@ -81,7 +83,11 @@ describe("Persistence Migration Framework & Future Schema Safety", () => {
     });
 
     it("accepts document already at current version", () => {
-      const v3: V3Doc = { schemaVersion: 3, title: "Modern Book", tags: ["fiction"] };
+      const v3: V3Doc = {
+        schemaVersion: 3,
+        title: "Modern Book",
+        tags: ["fiction"],
+      };
       const result = runner.run(v3);
       expect(result).toEqual(v3);
     });
@@ -104,10 +110,13 @@ describe("Persistence Migration Framework & Future Schema Safety", () => {
       const incompleteRunner = new MigrationRunner<V3Doc>({
         entityName: "IncompleteDoc",
         currentVersion: 3,
-        validate: (_d: unknown): _d is V3Doc => typeof _d === "object" && _d !== null,
+        validate: (_d: unknown): _d is V3Doc =>
+          typeof _d === "object" && _d !== null,
         migrations: [],
       });
-      expect(() => incompleteRunner.run({ schemaVersion: 1 })).toThrow(CorruptDataError);
+      expect(() => incompleteRunner.run({ schemaVersion: 1 })).toThrow(
+        CorruptDataError,
+      );
     });
 
     it("throws CorruptDataError if raw input is not an object", () => {
@@ -194,7 +203,9 @@ describe("Persistence Migration Framework & Future Schema Safety", () => {
       await fs.writeFile(statePath, JSON.stringify(futurePayload), "utf8");
 
       const store = new ReadingPositionStore(statePath);
-      await expect(store.getPosition("pub-1")).rejects.toThrow(UpgradeRequiredError);
+      await expect(store.getPosition("pub-1")).rejects.toThrow(
+        UpgradeRequiredError,
+      );
 
       // Verify original file was untouched
       const content = await fs.readFile(statePath, "utf8");

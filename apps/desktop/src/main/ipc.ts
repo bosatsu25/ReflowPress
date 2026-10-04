@@ -155,7 +155,9 @@ export function registerIpcHandlers(
     }
     const ext = path.extname(filePath).toLowerCase();
     if (ext !== ".pdf") {
-      throw new Error(`Security violation: expected a .pdf file, received '${ext}'`);
+      throw new Error(
+        `Security violation: expected a .pdf file, received '${ext}'`,
+      );
     }
     const resolvedPath = path.resolve(filePath);
     const buffer = await readFile(resolvedPath);

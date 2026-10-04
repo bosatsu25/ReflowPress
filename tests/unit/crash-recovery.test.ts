@@ -13,7 +13,9 @@ describe("Crash Recovery & Stable Runtime", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "reflowpress-crash-test-"));
+    tempDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "reflowpress-crash-test-"),
+    );
   });
 
   afterEach(async () => {
@@ -145,16 +147,30 @@ describe("Crash Recovery & Stable Runtime", () => {
       // Create a cache subdir with a tmp file
       const cacheDir = path.join(tempDir, "library-cache");
       await fs.mkdir(cacheDir, { recursive: true });
-      await fs.writeFile(path.join(cacheDir, "cover-1.png.tmp-abc"), "png", "utf8");
-      await fs.writeFile(path.join(cacheDir, "cover-1.png"), "valid png", "utf8");
+      await fs.writeFile(
+        path.join(cacheDir, "cover-1.png.tmp-abc"),
+        "png",
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(cacheDir, "cover-1.png"),
+        "valid png",
+        "utf8",
+      );
 
       const cleaned = await cleanupOrphanedTempFiles(tempDir);
       expect(cleaned).toBe(3);
 
       // Verify persistent files were untouched
-      expect(await fs.readFile(path.join(tempDir, "library-v1.json"), "utf8")).toBe("{}");
-      expect(await fs.readFile(path.join(tempDir, "reader-state.json"), "utf8")).toBe("{}");
-      expect(await fs.readFile(path.join(cacheDir, "cover-1.png"), "utf8")).toBe("valid png");
+      expect(
+        await fs.readFile(path.join(tempDir, "library-v1.json"), "utf8"),
+      ).toBe("{}");
+      expect(
+        await fs.readFile(path.join(tempDir, "reader-state.json"), "utf8"),
+      ).toBe("{}");
+      expect(
+        await fs.readFile(path.join(cacheDir, "cover-1.png"), "utf8"),
+      ).toBe("valid png");
 
       // Verify temporary files are deleted
       const rootFiles = await fs.readdir(tempDir);

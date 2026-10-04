@@ -44,6 +44,7 @@ ReflowPress implements a deterministic marker protocol in `app.getPath("userData
 Atomic file writes create temporary files with the prefix `.tmp-` or `.tmp.*` (e.g. `library-v1.json.tmp-179107...`). When an ungraceful shutdown occurs during a write, these files remain on disk indefinitely.
 
 On every application startup, the **Temporary Artifact Janitor**:
+
 1. Scans `userData` and configured cache directories (`library-cache/`).
 2. Identifies all files matching `*.tmp-*` or `*.tmp.*`.
 3. Safely deletes them to prevent disk storage bloat.
@@ -51,17 +52,20 @@ On every application startup, the **Temporary Artifact Janitor**:
 ### 3. Safe Workspace Session Restoration
 
 ReflowPress records lightweight workspace state in `.active-session.json` (or reader position store):
+
 - Last opened publication file path / ID
 - Reading position and section index
 - Active view mode (library vs reader)
 
 When a crash is detected on startup:
-- The UI exposes a non-intrusive recovery notification: *"ReflowPress recovered from an unexpected shutdown. Restore previous workspace?"*
+
+- The UI exposes a non-intrusive recovery notification: _"ReflowPress recovered from an unexpected shutdown. Restore previous workspace?"_
 - Accepting restores the previous publication and reading position; dismissing starts at the library catalog.
 
 ### 4. IPC & Security Boundaries
 
 To maintain release-grade security:
+
 - `contextIsolation: true` and `sandbox: true` are strictly enforced on all windows.
 - In-memory preload script exposes only typed, explicit invoke methods.
 - All file dialogs and paths are validated against path traversal attacks.
