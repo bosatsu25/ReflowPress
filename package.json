@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:cli": "vitest run tests/unit/cli.test.ts && playwright test tests/e2e/export-cli.spec.ts",
     "test:version": "node scripts/check-version.js",
+    "test:api": "vitest run tests/unit/api-contracts.test.ts",
     "build": "tsc -b && pnpm --filter @reflowpress/desktop build",
     "test:e2e": "playwright test",
     "test:visual": "playwright test tests/e2e/visual-regression.spec.ts",
