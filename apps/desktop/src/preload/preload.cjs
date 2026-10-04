@@ -34,6 +34,12 @@ const bridge = {
       ipcRenderer.removeListener("app:open-initial-file", handler);
     };
   },
+  getCrashRecoveryStatus() {
+    return ipcRenderer.invoke("app:get-crash-recovery-status");
+  },
+  clearCrashRecoveryStatus() {
+    return ipcRenderer.invoke("app:clear-crash-recovery-status");
+  },
   // Library API
   loadLibrary() {
     return ipcRenderer.invoke("library:load");

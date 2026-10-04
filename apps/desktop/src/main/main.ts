@@ -9,7 +9,10 @@ import { JsonAnnotationRepository } from "./annotation-repository.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import { CrashRecoveryManager } from "./crash-recovery.js";
+
 let mainWindow: BrowserWindow | null = null;
+let crashRecoveryManager: CrashRecoveryManager | null = null;
 
 function parseInitialFileArgument(): string | null {
   const args = process.argv;
@@ -24,7 +27,7 @@ function parseInitialFileArgument(): string | null {
   return null;
 }
 
-async function createWindow(): Promise<BrowserWindow> {
+async function createWindow(crashRecovery: CrashRecoveryManager): Promise<BrowserWindow> {
   const preloadPath = path.resolve(__dirname, "../preload/preload.cjs");
 
   const window = new BrowserWindow({
@@ -86,6 +89,7 @@ async function createWindow(): Promise<BrowserWindow> {
     annotationRepo,
     coversDir,
     initialFile,
+    crashRecovery,
   );
 
   // Load renderer
@@ -106,13 +110,22 @@ async function createWindow(): Promise<BrowserWindow> {
 }
 
 app.whenReady().then(async () => {
-  mainWindow = await createWindow();
+  crashRecoveryManager = new CrashRecoveryManager(app.getPath("userData"));
+  await crashRecoveryManager.checkCrashAndInitialize();
+
+  mainWindow = await createWindow(crashRecoveryManager);
 
   app.on("activate", async () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      mainWindow = await createWindow();
+    if ((!mainWindow || mainWindow.isDestroyed()) && crashRecoveryManager) {
+      mainWindow = await createWindow(crashRecoveryManager);
     }
   });
+});
+
+app.on("before-quit", async () => {
+  if (crashRecoveryManager) {
+    await crashRecoveryManager.recordCleanShutdown();
+  }
 });
 
 app.on("window-all-closed", () => {

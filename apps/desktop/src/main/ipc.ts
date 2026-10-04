@@ -50,6 +50,7 @@ import type { ReadingPositionStore } from "./reading-position-store.js";
 import type { JsonLibraryRepository } from "./library-repository.js";
 import type { JsonAnnotationRepository } from "./annotation-repository.js";
 import { scanLibraryPaths } from "./library-scanner.js";
+import type { CrashRecoveryManager } from "./crash-recovery.js";
 
 export function registerIpcHandlers(
   window: BrowserWindow,
@@ -58,7 +59,17 @@ export function registerIpcHandlers(
   annotationRepo: JsonAnnotationRepository,
   coversDir: string,
   initialFilePath: string | null = null,
+  crashRecovery?: CrashRecoveryManager,
 ): void {
+  ipcMain.handle("app:get-crash-recovery-status", async () => {
+    return crashRecovery?.getRecoveryStatus() ?? null;
+  });
+
+  ipcMain.handle("app:clear-crash-recovery-status", async () => {
+    crashRecovery?.clearRecoveryStatus();
+    return true;
+  });
+
   ipcMain.handle("app:get-initial-file", async () => {
     return initialFilePath;
   });
@@ -87,25 +98,51 @@ export function registerIpcHandlers(
           pub.metadata.identifier || `path:${normalizedAbsPath}`;
         const title = pub.metadata.title || path.basename(filePath);
 
-        return {
+        const result: LoadedPublicationResult = {
           kind: "epub",
           path: normalizedAbsPath,
           publicationId,
           publication: pub,
           title,
         };
+
+        if (crashRecovery) {
+          await crashRecovery.updateActiveSession({
+            lastActivePublication: {
+              id: publicationId,
+              filePath: normalizedAbsPath,
+              title,
+            },
+            lastView: "reader",
+          });
+        }
+
+        return result;
       }
 
       if (ext === ".pdf") {
         const publicationId = `path:${normalizedAbsPath}`;
         const title = path.basename(filePath, ".pdf");
 
-        return {
+        const result: LoadedPublicationResult = {
           kind: "pdf",
           path: normalizedAbsPath,
           publicationId,
           title,
         };
+
+        if (crashRecovery) {
+          await crashRecovery.updateActiveSession({
+            lastActivePublication: {
+              id: publicationId,
+              filePath: normalizedAbsPath,
+              title,
+            },
+            lastView: "reader",
+          });
+        }
+
+        return result;
       }
 
       throw new Error(`Unsupported publication format: ${ext}`);
@@ -125,6 +162,11 @@ export function registerIpcHandlers(
     "position:set",
     async (_event, position: SavedReadingPosition) => {
       await positionStore.savePosition(position);
+      if (crashRecovery) {
+        await crashRecovery.updateActiveSession({
+          lastUpdatedAt: new Date().toISOString(),
+        });
+      }
     },
   );
 
