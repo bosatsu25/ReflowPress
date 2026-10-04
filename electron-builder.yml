@@ -1,0 +1,70 @@
+appId: org.reflowpress.desktop
+productName: ReflowPress
+copyright: Copyright © 2026 ReflowPress contributors
+
+directories:
+  output: release-artifacts
+  buildResources: build
+
+files:
+  - apps/desktop/dist/**/*
+  - packages/*/dist/**/*
+  - package.json
+  - apps/desktop/package.json
+
+fileAssociations:
+  - ext: epub
+    name: Electronic Publication
+    description: Open with ReflowPress
+    role: Editor
+  - ext: pdf
+    name: Portable Document Format
+    description: Open with ReflowPress
+    role: Viewer
+
+protocols:
+  - name: ReflowPress Protocol
+    schemes:
+      - reflowpress
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  category: Office
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
