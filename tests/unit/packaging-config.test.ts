@@ -52,7 +52,17 @@ describe("Cross-Platform Packaging Configuration (electron-builder.yml)", () => 
     const yaml = await fs.readFile(configPath, "utf8");
 
     expect(yaml).toContain("${productName}-${version}-mac-${arch}.${ext}");
-    expect(yaml).toContain("${productName}-${version}-win-${arch}.${ext}");
+    expect(yaml).toContain("${productName}-Setup-${version}.${ext}");
+    expect(yaml).toContain("${productName}-${version}-portable.${ext}");
     expect(yaml).toContain("${productName}-${version}-linux-${arch}.${ext}");
+  });
+
+  it("configures hardened Electron runtime fuses", async () => {
+    const yaml = await fs.readFile(configPath, "utf8");
+
+    expect(yaml).toContain("electronFuses:");
+    expect(yaml).toContain("runAsNode: false");
+    expect(yaml).toContain("enableCookieEncryption: true");
+    expect(yaml).toContain("onlyLoadAppFromAsar: true");
   });
 });

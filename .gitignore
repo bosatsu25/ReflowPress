@@ -4,5 +4,6 @@ dist/
 coverage/
 playwright-report/
 test-results/
+release-artifacts/
 .tsbuildinfo
 *.tsbuildinfo

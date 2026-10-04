@@ -6,9 +6,18 @@ directories:
   output: release-artifacts
   buildResources: build
 
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+
 files:
   - apps/desktop/dist/**/*
   - packages/*/dist/**/*
+  - packages/*/package.json
   - package.json
   - apps/desktop/package.json
 
@@ -50,13 +59,16 @@ win:
     - target: portable
       arch:
         - x64
-  artifactName: ${productName}-${version}-win-${arch}.${ext}
 
 nsis:
+  artifactName: ${productName}-Setup-${version}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
 
 linux:
   target:

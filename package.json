@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Free, local-first ebook workbench",
+  "main": "apps/desktop/dist/main/main.js",
   "engines": {
     "node": ">=22.13.0"
   },
@@ -18,9 +19,34 @@
     "bench": "vitest run tests/benchmark",
     "analyze:bundle": "node scripts/analyze-bundle.js",
     "build": "tsc -b && pnpm --filter @reflowpress/desktop build",
+    "package": "electron-builder build",
+    "package:dir": "electron-builder --dir",
+    "package:win": "electron-builder --win",
+    "package:mac": "electron-builder --mac",
+    "package:linux": "electron-builder --linux",
     "test:e2e": "playwright test",
     "test:visual": "playwright test tests/e2e/visual-regression.spec.ts",
-    "test:visual:update": "playwright test tests/e2e/visual-regression.spec.ts --update-snapshots"
+    "test:visual:update": "playwright test tests/e2e/visual-regression.spec.ts --update-snapshots",
+    "smoke:package": "node scripts/smoke-test-package.js",
+    "release:checksums": "node scripts/generate-checksums.js",
+    "release:check": "pnpm test:version && pnpm test:api && pnpm audit --prod && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm analyze:bundle && pnpm bench && pnpm test:visual"
+  },
+  "dependencies": {
+    "@reflowpress/annotations": "workspace:*",
+    "@reflowpress/core": "workspace:*",
+    "@reflowpress/device": "workspace:*",
+    "@reflowpress/epub": "workspace:*",
+    "@reflowpress/export": "workspace:*",
+    "@reflowpress/library": "workspace:*",
+    "@reflowpress/opds": "workspace:*",
+    "@reflowpress/quality": "workspace:*",
+    "@reflowpress/reader": "workspace:*",
+    "@reflowpress/repair": "workspace:*",
+    "@reflowpress/search": "workspace:*",
+    "@reflowpress/sync": "workspace:*",
+    "@reflowpress/typography": "workspace:*",
+    "@xmldom/xmldom": "^0.9.12",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
@@ -28,6 +54,7 @@
     "@playwright/test": "^1.55.0",
     "@types/node": "^22.15.0",
     "electron": "^33.4.11",
+    "electron-builder": "^26.15.3",
     "eslint": "^10.0.0",
     "globals": "^16.4.0",
     "prettier": "^3.6.2",
