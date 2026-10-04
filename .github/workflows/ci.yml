@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   verify:
+    name: Release Gate Verification
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,16 +22,30 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - run: pnpm exec playwright install chromium
-      - run: pnpm test:version
-      - run: pnpm test:api
-      - run: pnpm audit --prod
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
+      - run: pnpm release:check
+
+  package-smoke:
+    name: Package Smoke Verification
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install
       - run: pnpm build
-      - run: pnpm analyze:bundle
+      - name: Build Unpacked Linux Package
+        run: pnpm package:dir
+      - name: Verify Packaged Artifacts Smoke
+        run: pnpm smoke:package
 
   desktop-e2e:
+    name: Desktop E2E Tests
     runs-on: ubuntu-latest
     needs: verify
     timeout-minutes: 10
