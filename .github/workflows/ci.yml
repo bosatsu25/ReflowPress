@@ -29,6 +29,7 @@ jobs:
     name: Package Matrix (${{ matrix.os }})
     needs: verify
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
