@@ -62,5 +62,15 @@
     "typescript-eslint": "^8.57.1",
     "vite": "^7.0.0",
     "vitest": "^5.0.0"
-  }
+  },
+  "author": {
+    "name": "bosatsu25",
+    "email": "bosatsu25@users.noreply.github.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bosatsu25/ReflowPress.git"
+  },
+  "desktopName": "org.reflowpress.desktop"
 }
