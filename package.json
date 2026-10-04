@@ -25,8 +25,8 @@
     "package:mac": "electron-builder --mac",
     "package:linux": "electron-builder --linux",
     "test:e2e": "playwright test",
-    "test:visual": "playwright test tests/e2e/visual-regression.spec.ts",
-    "test:visual:update": "playwright test tests/e2e/visual-regression.spec.ts --update-snapshots",
+    "test:visual": "node scripts/run-visual-tests.js",
+    "test:visual:update": "node scripts/run-visual-tests.js --update-snapshots",
     "smoke:package": "node scripts/smoke-test-package.js",
     "release:checksums": "node scripts/generate-checksums.js",
     "release:check": "pnpm test:version && pnpm test:api && pnpm audit --prod && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm analyze:bundle && pnpm bench && pnpm test:visual"
