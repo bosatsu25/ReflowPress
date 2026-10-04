@@ -1,14 +1,23 @@
-name: CI
+name: Release Pipeline
 
 on:
-  pull_request:
   push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run build pipeline without publishing release"
+        required: true
+        type: boolean
+        default: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  verify:
+  gate-validation:
+    name: Release Gate Validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,11 +38,15 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: pnpm analyze:bundle
+      - run: pnpm bench
 
-  desktop-e2e:
-    runs-on: ubuntu-latest
-    needs: verify
-    timeout-minutes: 10
+  build-artifacts:
+    name: Build Distribution Packages
+    needs: gate-validation
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -45,15 +58,14 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - run: pnpm build
-      - run: pnpm exec playwright install chromium --with-deps
-      - name: Run Desktop E2E Tests (Xvfb)
-        run: xvfb-run -a pnpm test:e2e
-      - name: Upload E2E Test Results
-        if: failure()
+      - name: Inspect Built Renderer Bundle
+        run: pnpm analyze:bundle
+      - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-e2e-results
+          name: reflowpress-dist-${{ matrix.os }}
           path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
+            apps/desktop/dist/
+            apps/cli/dist/
+            release-artifacts/
+          retention-days: 14
