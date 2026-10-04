@@ -150,7 +150,15 @@ export function registerIpcHandlers(
   );
 
   ipcMain.handle("publication:read-pdf", async (_event, filePath: string) => {
-    const buffer = await readFile(filePath);
+    if (!filePath || typeof filePath !== "string") {
+      throw new Error("Invalid file path: path must be a non-empty string");
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext !== ".pdf") {
+      throw new Error(`Security violation: expected a .pdf file, received '${ext}'`);
+    }
+    const resolvedPath = path.resolve(filePath);
+    const buffer = await readFile(resolvedPath);
     return buffer;
   });
 
@@ -275,14 +283,24 @@ export function registerIpcHandlers(
     "library:read-cover",
     async (_event, coverPath: string): Promise<string | null> => {
       try {
-        const buffer = await readFile(coverPath);
-        const ext = path.extname(coverPath).toLowerCase();
+        if (!coverPath || typeof coverPath !== "string") {
+          return null;
+        }
+        const resolvedPath = path.resolve(coverPath);
+        const ext = path.extname(resolvedPath).toLowerCase();
+        const validImageExts = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+        if (!validImageExts.includes(ext)) {
+          return null;
+        }
+        const buffer = await readFile(resolvedPath);
         const mimeType =
           ext === ".jpg" || ext === ".jpeg"
             ? "image/jpeg"
             : ext === ".webp"
               ? "image/webp"
-              : "image/png";
+              : ext === ".gif"
+                ? "image/gif"
+                : "image/png";
         return `data:${mimeType};base64,${buffer.toString("base64")}`;
       } catch {
         return null;
