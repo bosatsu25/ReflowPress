@@ -37,6 +37,7 @@ protocols:
       - reflowpress
 
 mac:
+  icon: build/icon.svg
   category: public.app-category.productivity
   target:
     - target: dmg
@@ -52,6 +53,7 @@ mac:
   gatekeeperAssess: false
 
 win:
+  icon: build/icon.svg
   target:
     - target: nsis
       arch:
@@ -71,6 +73,11 @@ portable:
   artifactName: ${productName}-${version}-portable.${ext}
 
 linux:
+  icon: build/icon.svg
+  maintainer: "bosatsu25 <bosatsu25@users.noreply.github.com>"
+  vendor: "ReflowPress contributors"
+  synopsis: "Free, local-first ebook workbench"
+  syncDesktopName: true
   target:
     - target: AppImage
       arch:
