@@ -84,3 +84,5 @@ export interface Renderer {
     options?: RenderOptions,
   ): Promise<PdfDocument>;
 }
+
+export { REFLOWPRESS_VERSION } from "./version.js";

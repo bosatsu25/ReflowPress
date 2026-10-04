@@ -18,6 +18,7 @@ import {
 } from "@reflowpress/quality";
 import { planRepairs, executeRepair } from "@reflowpress/repair";
 import { OpdsServer, fetchRemoteOpdsFeed } from "@reflowpress/opds";
+import { REFLOWPRESS_VERSION } from "@reflowpress/core";
 import {
   FolderSyncAdapter,
   WebdavSyncAdapter,
@@ -37,7 +38,7 @@ import {
   createDefaultCatalog,
 } from "@reflowpress/library";
 
-export const CLI_VERSION = "0.1.0";
+export const CLI_VERSION = REFLOWPRESS_VERSION;
 
 export const EXIT_CODES = {
   SUCCESS: 0,

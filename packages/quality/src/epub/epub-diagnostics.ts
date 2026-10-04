@@ -17,6 +17,7 @@ import {
   parseSmilDocument,
   type MediaOverlayDocument,
 } from "@reflowpress/epub";
+import { REFLOWPRESS_VERSION } from "@reflowpress/core";
 
 const KNOWN_MIME_TYPES: Record<string, string> = {
   ".xhtml": "application/xhtml+xml",
@@ -884,7 +885,7 @@ function finalizeReport(
     summary,
     rulesExecuted: Array.from(rulesExecuted).sort(),
     rulesSkipped: [...rulesSkipped].sort(),
-    toolVersion: toolVersion ?? "0.1.0",
+    toolVersion: toolVersion ?? REFLOWPRESS_VERSION,
     ...(mediaOverlays ? { mediaOverlays } : {}),
   };
 }
