@@ -121,11 +121,69 @@ export function verifyPackagedArtifacts(
   };
 }
 
+export function assertPlatformArtifacts(
+  targetDir = path.join(rootDir, "release-artifacts"),
+  platform = process.platform,
+) {
+  if (!fs.existsSync(targetDir)) {
+    throw new Error(`Target directory does not exist: ${targetDir}`);
+  }
+
+  const files = fs.readdirSync(targetDir);
+  const matchedArtifacts = [];
+
+  function checkFile(predicate, description) {
+    const matched = files.find((f) => {
+      const fullPath = path.join(targetDir, f);
+      return (
+        predicate(f) &&
+        fs.statSync(fullPath).isFile() &&
+        fs.statSync(fullPath).size > 10000000
+      );
+    });
+    if (!matched) {
+      throw new Error(
+        `Missing expected artifact for ${platform}: ${description} in ${targetDir}. Found: ${files.join(", ")}`,
+      );
+    }
+    matchedArtifacts.push(matched);
+  }
+
+  if (platform === "win32") {
+    checkFile(
+      (f) => f.endsWith(".exe") && f.includes("Setup"),
+      "Windows NSIS Installer (*Setup*.exe)",
+    );
+    checkFile(
+      (f) => f.endsWith(".exe") && f.includes("portable"),
+      "Windows Portable Executable (*portable*.exe)",
+    );
+  } else if (platform === "darwin") {
+    checkFile((f) => f.endsWith(".dmg"), "macOS DMG Package (*.dmg)");
+    checkFile((f) => f.endsWith(".zip"), "macOS ZIP Archive (*.zip)");
+  } else if (platform === "linux") {
+    checkFile(
+      (f) => f.endsWith(".AppImage"),
+      "Linux AppImage Package (*.AppImage)",
+    );
+    checkFile((f) => f.endsWith(".deb"), "Linux Debian Package (*.deb)");
+  } else {
+    throw new Error(`Unsupported platform for artifact assertion: ${platform}`);
+  }
+
+  return {
+    valid: true,
+    platform,
+    artifacts: matchedArtifacts,
+  };
+}
+
 if (
   process.argv[1] &&
   path.resolve(process.argv[1]) === path.resolve(__filename)
 ) {
   try {
+    const assertArtifactsFlag = process.argv.includes("--assert-artifacts");
     const result = verifyPackagedArtifacts();
     console.log("✓ Packaged artifact verification PASSED:");
     console.log(`  - Platform: ${result.platform}`);
@@ -133,6 +191,16 @@ if (
       `  - Binary: ${result.binaryPath} (${(result.binarySize / (1024 * 1024)).toFixed(2)} MB)`,
     );
     console.log(`  - ASAR: ${result.asarPath}`);
+
+    if (assertArtifactsFlag) {
+      const artifactResult = assertPlatformArtifacts();
+      console.log(
+        `✓ Expected platform distribution packages verified for ${artifactResult.platform}:`,
+      );
+      for (const artifact of artifactResult.artifacts) {
+        console.log(`  - ${artifact}`);
+      }
+    }
     process.exit(0);
   } catch (err) {
     console.error("✗ Packaged artifact verification FAILED:", err.message);
