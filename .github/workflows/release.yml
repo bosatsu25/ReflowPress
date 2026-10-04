@@ -37,6 +37,7 @@ jobs:
     name: Build Distribution Packages (${{ matrix.os }})
     needs: gate-validation
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
