@@ -225,12 +225,12 @@ To ensure absolute transparency between implemented features and planned milesto
 - [x] Headless CLI interoperability subcommands (`opds`, `sync`, `backup`, `restore`, `device`).
 - [x] Accessible Desktop Interoperability Modal with live announcements.
 
-### Milestone 1.0: Stable Release (Hardening)
+### Milestone 1.0: Stable Release (Complete)
 
 - [x] Production installers for Windows and Linux. Builds are unsigned; macOS is not distributed.
 - [x] Crash recovery and state restoration.
 - [x] Repository-level performance benchmark (1,000-book catalog load, filter, and sort well under 1 s).
-- [ ] End-to-end library open benchmark including Electron startup and first render (not yet measured).
+- [ ] End-to-end library open benchmark including Electron startup and first render (deferred beyond 1.0; not yet measured).
 - [x] API freeze and backward compatibility guarantees (`pnpm test:api`).
 
 ---
