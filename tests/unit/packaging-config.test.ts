@@ -57,6 +57,24 @@ describe("Cross-Platform Packaging Configuration (electron-builder.yml)", () => 
     expect(yaml).toContain("${productName}-${version}-linux-${arch}.${ext}");
   });
 
+  it("never lets electron-builder publish implicitly from packaging scripts", async () => {
+    // Without --publish never, electron-builder on CI tries to look up a
+    // GitHub draft release and fails when GH_TOKEN is absent. Releases are
+    // published by the release workflow instead.
+    const pkg = JSON.parse(
+      await fs.readFile(path.resolve(__dirname, "../../package.json"), "utf8"),
+    ) as { scripts: Record<string, string> };
+
+    for (const name of [
+      "package",
+      "package:win",
+      "package:mac",
+      "package:linux",
+    ]) {
+      expect(pkg.scripts[name]).toContain("--publish never");
+    }
+  });
+
   it("configures hardened Electron runtime fuses", async () => {
     const yaml = await fs.readFile(configPath, "utf8");
 
