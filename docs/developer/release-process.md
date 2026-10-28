@@ -96,4 +96,5 @@ Once all gates pass on the release branch and the PR is approved:
    ```
 3. **CI Release Workflow**:
    - Pushing the `v*.*.*` tag automatically triggers `.github/workflows/release.yml`.
+   - The release body is read from `docs/releases/<version>.md` (for tag `v1.2.3`, `docs/releases/1.2.3.md`), so add that file before tagging.
    - The workflow compiles the matrix binaries on Windows and Linux runners, runs `pnpm release:checksums`, and attaches the resulting packages to the GitHub Release.
