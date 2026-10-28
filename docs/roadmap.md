@@ -21,7 +21,7 @@ flowchart TD
     M06 --> M07[0.7 Export Workbench<br/>COMPLETE]
     M07 --> M08[0.8 Quality & Repair<br/>COMPLETE]
     M08 --> M09[0.9 Interoperability<br/>COMPLETE]
-    M09 --> M10[1.0 Stable Release<br/>HARDENING]
+    M09 --> M10[1.0 Stable Release<br/>COMPLETE]
 ```
 
 ---
@@ -190,7 +190,7 @@ flowchart TD
 
 ### Milestone 1.0: Stable Release
 
-- **Status**: **In Progress (Hardening)**
+- **Status**: **Complete** (released as `v1.0.0` on 2026-10-28)
 - **Goal**: _Production-grade stability, security, and distribution._
 - **Deliverables**:
   - Official packaging specification (`electron-builder.yml`) for Windows and Linux. macOS is not distributed in 1.0.
