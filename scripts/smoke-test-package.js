@@ -11,31 +11,39 @@ const rootDir = path.resolve(__dirname, "..");
 
 export function verifyPackagedArtifacts(
   targetDir = path.join(rootDir, "release-artifacts"),
+  platform = process.platform,
 ) {
   if (!fs.existsSync(targetDir)) {
     throw new Error(`Target directory does not exist: ${targetDir}`);
   }
 
-  const platform = process.platform;
   let unpackedDir;
   let binaryPath;
+  // File that carries the Electron runtime. On Windows and Linux this is the
+  // executable itself; on macOS the executable is a small launcher stub and
+  // the runtime lives in the bundled Electron Framework.
+  let runtimePath;
 
   if (platform === "win32") {
     unpackedDir = path.join(targetDir, "win-unpacked");
     binaryPath = path.join(unpackedDir, "ReflowPress.exe");
   } else if (platform === "darwin") {
     unpackedDir = path.join(targetDir, "mac");
-    binaryPath = path.join(
-      unpackedDir,
-      "ReflowPress.app",
-      "Contents",
-      "MacOS",
-      "ReflowPress",
+    const contentsDir = path.join(unpackedDir, "ReflowPress.app", "Contents");
+    binaryPath = path.join(contentsDir, "MacOS", "ReflowPress");
+    runtimePath = path.join(
+      contentsDir,
+      "Frameworks",
+      "Electron Framework.framework",
+      "Versions",
+      "A",
+      "Electron Framework",
     );
   } else {
     unpackedDir = path.join(targetDir, "linux-unpacked");
     binaryPath = path.join(unpackedDir, "reflowpress");
   }
+  runtimePath ??= binaryPath;
 
   // Check if unpacked app exists
   if (!fs.existsSync(unpackedDir)) {
@@ -47,9 +55,18 @@ export function verifyPackagedArtifacts(
   }
 
   const binaryStat = fs.statSync(binaryPath);
-  if (binaryStat.size < 10000000) {
+  if (binaryStat.size === 0) {
+    throw new Error(`Executable is empty: ${binaryPath}`);
+  }
+
+  if (!fs.existsSync(runtimePath)) {
+    throw new Error(`Electron runtime not found: ${runtimePath}`);
+  }
+
+  const runtimeStat = fs.statSync(runtimePath);
+  if (runtimeStat.size < 10000000) {
     throw new Error(
-      `Executable appears truncated or empty (${binaryStat.size} bytes): ${binaryPath}`,
+      `Electron runtime appears truncated or empty (${runtimeStat.size} bytes): ${runtimePath}`,
     );
   }
 
@@ -116,6 +133,8 @@ export function verifyPackagedArtifacts(
     unpackedDir,
     binaryPath,
     binarySize: binaryStat.size,
+    runtimePath,
+    runtimeSize: runtimeStat.size,
     asarPath,
     installers,
   };
@@ -190,6 +209,11 @@ if (
     console.log(
       `  - Binary: ${result.binaryPath} (${(result.binarySize / (1024 * 1024)).toFixed(2)} MB)`,
     );
+    if (result.runtimePath !== result.binaryPath) {
+      console.log(
+        `  - Runtime: ${result.runtimePath} (${(result.runtimeSize / (1024 * 1024)).toFixed(2)} MB)`,
+      );
+    }
     console.log(`  - ASAR: ${result.asarPath}`);
 
     if (assertArtifactsFlag) {

@@ -21,6 +21,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
+      # Electron 44 fetches its binary lazily instead of on install.
+      - run: pnpm exec install-electron
       - run: pnpm exec playwright install chromium --with-deps
       - name: Run Release Check Aggregator
         run: pnpm release:check
@@ -34,8 +36,6 @@ jobs:
         include:
           - os: windows-latest
             command: package:win
-          - os: macos-latest
-            command: package:mac
           - os: ubuntu-latest
             command: package:linux
     runs-on: ${{ matrix.os }}
@@ -78,6 +78,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
+      - run: pnpm exec install-electron
       - run: pnpm build
       - run: pnpm exec playwright install chromium --with-deps
       - name: Run Desktop E2E Tests (Xvfb)

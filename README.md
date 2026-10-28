@@ -119,7 +119,7 @@ The inspector evaluates archive validity, verifies internal OPF references, chec
 7. **Never silently corrupt a publication**: Malformed input is surfaced transparently.
 8. **Inspect before repair**: Factual diagnostics always precede remediation.
 9. **Non-destructive edits by default**: Original books remain untouched; repairs and exports generate separate files.
-10. **Automated repairs must be explainable and reversible**: Every repair diff is previewable and undoable.
+10. **Automated repairs must be explainable and reversible**: Every repair diff is previewable, and the original file is never modified, so discarding the `_repaired_` output reverts a repair.
 11. **Quality is a product feature**: Built-in verification gates guarantee document fidelity.
 12. **AI is optional**: 100% usable in offline, air-gapped environments without AI.
 13. **Privacy by default**: Zero telemetry, zero analytics tracking, zero silent network calls.

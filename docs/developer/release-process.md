@@ -48,9 +48,6 @@ pnpm package:dir
 # Windows (NSIS Installer and Portable Executable)
 pnpm package:win
 
-# macOS (DMG and ZIP)
-pnpm package:mac
-
 # Linux (AppImage and DEB)
 pnpm package:linux
 ```
@@ -99,4 +96,4 @@ Once all gates pass on the release branch and the PR is approved:
    ```
 3. **CI Release Workflow**:
    - Pushing the `v*.*.*` tag automatically triggers `.github/workflows/release.yml`.
-   - The workflow compiles the matrix binaries on Windows, macOS, and Linux runners, runs `pnpm release:checksums`, and attaches the resulting packages to the GitHub Release.
+   - The workflow compiles the matrix binaries on Windows and Linux runners, runs `pnpm release:checksums`, and attaches the resulting packages to the GitHub Release.

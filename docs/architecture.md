@@ -164,7 +164,7 @@ packages/
   renderer/    - Renderer interface contracts
   validation/  - Validation interface contracts
 apps/
-  desktop/     - Electron 33 + React 19 + Vite desktop workbench application
+  desktop/     - Electron 44 + React 19 + Vite desktop workbench application
   cli/         - Headless CLI entry point (export, inspect, validate, repair)
 ```
 
@@ -216,7 +216,7 @@ flowchart TD
 - `@reflowpress/validation`: Rules engine for EPUB diagnostic checks and PDF Quality Gate assertions.
 - `@reflowpress/library`: SQLite/file-based book indexing, cover generation, collections, and shelf queries.
 - `@reflowpress/search`: Inverted index and streaming search across publications and notes.
-- `@reflowpress/annotations`: Highlight anchoring (EPUB CFI / text selectors), notes, bookmark models, and export serializers.
+- `@reflowpress/annotations`: Highlight anchoring (W3C text quote and position selectors), notes, bookmark models, and export serializers.
 - `@reflowpress/storage`: Local filesystem abstraction, atomic file writing, backup rotation, and platform-specific path helpers.
 
 _Note: These packages represent an architectural roadmap. They will be introduced incrementally according to the milestone schedule rather than created prematurely._
@@ -592,7 +592,7 @@ ReflowPress 1.0 hardens the runtime against ungraceful terminations, forward sch
    - The file is **never quarantined, truncated, or overwritten**. The user is prompted to upgrade ReflowPress, ensuring complete forward safety.
 
 4. **Multi-Platform Distribution Configuration**:
-   - `electron-builder.yml` packages the application for Windows (nsis/portable x64), macOS (dmg/zip universal/arm64/x64), and Linux (AppImage/deb x64).
+   - `electron-builder.yml` packages the application for Windows (nsis/portable x64) and Linux (AppImage/deb x64). macOS is not distributed in 1.0.
    - Establishes native file associations for `.epub` and `.pdf` and custom protocol handlers (`reflowpress://`).
 
 ---

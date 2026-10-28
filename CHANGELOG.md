@@ -18,8 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Implemented `MigrationRunner` and `UpgradeRequiredError` for `library-v1.json`, `reader-state.json`, and `annotations-v1.json`.
   - Future schemas (e.g., version 99) are safely quarantined without data destruction or silent overwrite.
 - **Packaging & Distribution**:
-  - Configured multi-platform packaging via `electron-builder` producing Windows NSIS installer (`ReflowPress-Setup-1.0.0.exe`), portable binary (`ReflowPress-1.0.0-portable.exe`), macOS DMG/ZIP, and Linux AppImage/DEB.
+  - Configured multi-platform packaging via `electron-builder` producing Windows NSIS installer (`ReflowPress-Setup-1.0.0.exe`), portable binary (`ReflowPress-1.0.0-portable.exe`), and Linux AppImage/DEB.
+  - macOS packages are not distributed in 1.0; macOS users can run from source.
   - Hardened Electron runtime using `@electron/fuses` (`runAsNode: false`, `onlyLoadAppFromAsar: true`, `enableCookieEncryption: true`).
+  - Upgraded Electron from 33.4 (out of support since April 2025) to the supported 44.x line, picking up upstream Chromium, V8, and Node security fixes.
+  - Packaging scripts pass `--publish never`; release assets are attached only by the release workflow.
   - Implemented automated cryptographic checksum generation (`SHA256SUMS.txt`).
 - **Performance & Code Splitting**:
   - Split renderer vendor chunks (`pdfjs`, `react-vendor`) reducing initial entry point chunk to ~123 kB (budget < 500 kB).

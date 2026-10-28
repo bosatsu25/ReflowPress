@@ -17,14 +17,11 @@ describe("Cross-Platform Packaging Configuration (electron-builder.yml)", () => 
     expect(yaml).toContain("output: release-artifacts");
   });
 
-  it("declares standard OS targets: Windows, macOS, Linux", async () => {
+  it("declares the distributed OS targets: Windows and Linux only", async () => {
     const yaml = await fs.readFile(configPath, "utf8");
 
-    // macOS: dmg + zip, x64 + arm64
-    expect(yaml).toContain("mac:");
-    expect(yaml).toContain("dmg");
-    expect(yaml).toContain("zip");
-    expect(yaml).toContain("arm64");
+    // macOS is not distributed in 1.0.
+    expect(yaml).not.toMatch(/^mac:/m);
 
     // Windows: nsis + portable, x64
     expect(yaml).toContain("win:");
@@ -51,10 +48,22 @@ describe("Cross-Platform Packaging Configuration (electron-builder.yml)", () => 
   it("follows deterministic artifact naming convention", async () => {
     const yaml = await fs.readFile(configPath, "utf8");
 
-    expect(yaml).toContain("${productName}-${version}-mac-${arch}.${ext}");
     expect(yaml).toContain("${productName}-Setup-${version}.${ext}");
     expect(yaml).toContain("${productName}-${version}-portable.${ext}");
     expect(yaml).toContain("${productName}-${version}-linux-${arch}.${ext}");
+  });
+
+  it("never lets electron-builder publish implicitly from packaging scripts", async () => {
+    // Without --publish never, electron-builder on CI tries to look up a
+    // GitHub draft release and fails when GH_TOKEN is absent. Releases are
+    // published by the release workflow instead.
+    const pkg = JSON.parse(
+      await fs.readFile(path.resolve(__dirname, "../../package.json"), "utf8"),
+    ) as { scripts: Record<string, string> };
+
+    for (const name of ["package", "package:win", "package:linux"]) {
+      expect(pkg.scripts[name]).toContain("--publish never");
+    }
   });
 
   it("configures hardened Electron runtime fuses", async () => {
