@@ -164,7 +164,7 @@ packages/
   renderer/    - Renderer interface contracts
   validation/  - Validation interface contracts
 apps/
-  desktop/     - Electron 33 + React 19 + Vite desktop workbench application
+  desktop/     - Electron 44 + React 19 + Vite desktop workbench application
   cli/         - Headless CLI entry point (export, inspect, validate, repair)
 ```
 

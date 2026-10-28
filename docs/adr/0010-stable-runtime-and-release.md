@@ -16,7 +16,7 @@ Prior to 1.0, while file writes were atomic (write to `.tmp-*` followed by `fsyn
    - `fsync()` flushing dirty pages to persistent storage prior to atomic directory link swapping via `rename()`.
    - Temporary file naming conventions with non-colliding process-unique identifiers.
 2. **Electron Security Guidelines**:
-   - Electron 33.x Application Security Architecture: context isolation, sandboxing, session privilege restrictions, CSP enforcement, navigation lockouts.
+   - Electron 44.x Application Security Architecture: context isolation, sandboxing, session privilege restrictions, CSP enforcement, navigation lockouts.
    - Reference: `https://www.electronjs.org/docs/latest/tutorial/security`
 3. **SemVer 2.0.0 Specification**:
    - Canonical version numbering and public API freeze rules.

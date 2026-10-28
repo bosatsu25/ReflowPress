@@ -29,6 +29,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
+      # Electron 44 fetches its binary lazily instead of on install.
+      - run: pnpm exec install-electron
       - run: pnpm exec playwright install chromium --with-deps
       - name: Run Release Check Aggregator
         run: pnpm release:check
