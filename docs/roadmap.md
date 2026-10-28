@@ -193,7 +193,7 @@ flowchart TD
 - **Status**: **In Progress (Hardening)**
 - **Goal**: _Production-grade stability, security, and distribution._
 - **Deliverables**:
-  - Official multi-platform packaging specification (`electron-builder.yml`) for macOS, Windows, and Linux.
+  - Official packaging specification (`electron-builder.yml`) for Windows and Linux. macOS is not distributed in 1.0.
   - Crash recovery protocol with `.clean-shutdown` and `.active-session.json` marker tracking, non-intrusive workspace recovery UI, and automatic cleanup of orphaned atomic `.tmp-*` files.
   - Synthetic 1,000-book performance benchmark (< 10ms `JsonLibraryRepository` disk loading and in-memory filtering/sorting, well under 1,000ms budget; note: excludes full Electron cold boot and DOM render).
   - Desktop renderer code-splitting with sub-500 kB application chunks and automated bundle size budget analysis (`pnpm analyze:bundle`).

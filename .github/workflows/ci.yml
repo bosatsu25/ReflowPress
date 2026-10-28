@@ -36,8 +36,6 @@ jobs:
         include:
           - os: windows-latest
             command: package:win
-          - os: macos-latest
-            command: package:mac
           - os: ubuntu-latest
             command: package:linux
     runs-on: ${{ matrix.os }}

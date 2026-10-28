@@ -109,12 +109,13 @@ To ensure absolute transparency between implemented features and planned milesto
 - Crash recovery with `.clean-shutdown` / `.active-session.json` markers, a recovery banner, and cleanup of orphaned `.tmp-*` files.
 - Renderer code splitting with an enforced bundle budget (`pnpm analyze:bundle`).
 - Electron 44 runtime with hardened fuses, strict CSP, and validated IPC.
-- `electron-builder` packaging for Windows (NSIS, portable), macOS (DMG, ZIP; x64 and arm64), and Linux (AppImage, DEB), verified by a packaged smoke test and SHA-256 checksums.
+- `electron-builder` packaging for Windows (NSIS, portable) and Linux (AppImage, DEB), verified by a packaged smoke test and SHA-256 checksums.
 
 ### Not Implemented or Deferred Beyond 1.0
 
 - Background auto-update (deferred by policy; see [Update Policy](updates.md)).
-- Code-signed and notarized binaries (1.0 builds are unsigned; see [Code Signing Policy](code-signing.md)).
+- macOS packages (not distributed in 1.0; macOS users can run from source).
+- Code-signed Windows binaries (1.0 builds are unsigned; see [Code Signing Policy](code-signing.md)).
 - End-to-end startup benchmark: the 1,000-book benchmark measures `JsonLibraryRepository` load, filter, and sort only, not Electron cold start or first render.
 - Third-party accessibility certification (1.0 ships a self-audit; see [Accessibility Audit](accessibility-audit.md)).
 - Synchronized Media Overlays audio playback in the reader UI.
@@ -226,7 +227,7 @@ To ensure absolute transparency between implemented features and planned milesto
 
 ### Milestone 1.0: Stable Release (Hardening)
 
-- [x] Production cross-platform installers (Windows, macOS, Linux). Builds are unsigned.
+- [x] Production installers for Windows and Linux. Builds are unsigned; macOS is not distributed.
 - [x] Crash recovery and state restoration.
 - [x] Repository-level performance benchmark (1,000-book catalog load, filter, and sort well under 1 s).
 - [ ] End-to-end library open benchmark including Electron startup and first render (not yet measured).

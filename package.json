@@ -22,7 +22,6 @@
     "package": "electron-builder build --publish never",
     "package:dir": "electron-builder --dir",
     "package:win": "electron-builder --win --publish never",
-    "package:mac": "electron-builder --mac --publish never",
     "package:linux": "electron-builder --linux --publish never",
     "test:e2e": "playwright test",
     "test:visual": "node scripts/run-visual-tests.js",

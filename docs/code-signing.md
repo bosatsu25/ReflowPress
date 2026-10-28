@@ -21,16 +21,9 @@ To ensure data integrity and prevent supply-chain tampering without relying on c
   3. Click **Run anyway**.
 - **Integrity Verification**: Verify that the SHA-256 hash of `ReflowPress-Setup-1.0.0.exe` or `ReflowPress-1.0.0-portable.exe` exactly matches the digest in `SHA256SUMS.txt`.
 
-### 2. macOS (Apple Developer ID & Notarization)
+### 2. macOS
 
-- **Signing Status**: Unsigned / Ad-hoc signed in automated builds. Notarization requires an active Apple Developer Program account.
-- **User Prompt**: macOS Gatekeeper may display:
-  > _"ReflowPress cannot be opened because Apple cannot check it for malicious software."_
-- **Bypassing the Warning**:
-  1. Open **System Settings → Privacy & Security**.
-  2. Scroll to the **Security** section where ReflowPress is listed.
-  3. Click **Open Anyway** and enter your macOS administrator password.
-- **Integrity Verification**: Run `shasum -a 256 ReflowPress-1.0.0-mac-*.dmg` and verify against `SHA256SUMS.txt`.
+- **Distribution Status**: Not distributed in 1.0. Downloaded macOS apps need an Apple Developer ID signature and notarization to open without Gatekeeper intervention, so no macOS packages are published. macOS users can run ReflowPress from source.
 
 ### 3. Linux (AppImage / DEB)
 
@@ -49,7 +42,7 @@ You can verify the authenticity and integrity of downloaded files on any platfor
 Get-FileHash -Algorithm SHA256 .\ReflowPress-Setup-1.0.0.exe
 ```
 
-### On macOS & Linux (Terminal)
+### On Linux (Terminal)
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing

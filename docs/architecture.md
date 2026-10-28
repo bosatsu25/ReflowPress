@@ -592,7 +592,7 @@ ReflowPress 1.0 hardens the runtime against ungraceful terminations, forward sch
    - The file is **never quarantined, truncated, or overwritten**. The user is prompted to upgrade ReflowPress, ensuring complete forward safety.
 
 4. **Multi-Platform Distribution Configuration**:
-   - `electron-builder.yml` packages the application for Windows (nsis/portable x64), macOS (dmg/zip universal/arm64/x64), and Linux (AppImage/deb x64).
+   - `electron-builder.yml` packages the application for Windows (nsis/portable x64) and Linux (AppImage/deb x64). macOS is not distributed in 1.0.
    - Establishes native file associations for `.epub` and `.pdf` and custom protocol handlers (`reflowpress://`).
 
 ---

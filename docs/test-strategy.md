@@ -154,7 +154,7 @@ The test suite applies standard test design techniques across the Inspector, Loa
    ```
 2. **CI Gates**:
    - `verify`: Runs on `ubuntu-latest` executing `pnpm release:check` (version parity, API contracts, production audit, lint, typecheck, vitest with 266 tests, build, bundle budget, benchmark, and visual regression).
-   - `package-matrix`: Packages and smoke-tests the desktop app on Windows, macOS, and Linux.
+   - `package-matrix`: Packages and smoke-tests the desktop app on Windows and Linux.
    - `desktop-e2e`: Runs on `ubuntu-latest` under `xvfb-run -a pnpm test:e2e` (27 tests) with automated failure artifact capture and axe-core accessibility regression scanning.
 3. **Deterministic CI Pipeline**: GitHub Actions runs on `ubuntu-latest` with Node.js 22, verifying formatting, strict typing, unit tests, and workspace builds on every PR and push to `main`.
 4. **Golden Master Stability**: Structural and textual invariants are verified in unit testing, while visual pixel stability is checked via Playwright visual snapshots under `test:visual`.
