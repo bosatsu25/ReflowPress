@@ -79,9 +79,28 @@ A comprehensive regular-expression scan was executed across all markdown files (
 
 ## 4. Verification Checkpoint
 
+Wave 0 recorded 30 files / 216 unit tests. The figures below were re-measured on 2026-10-28 after the 1.0 hardening work and the Electron 44 upgrade.
+
 ```text
-Unit Test Suite:        30 files, 216 tests passed (100% PASS)
-Playwright E2E Suite:   27 tests passed (100% PASS)
-Production Audit:       0 vulnerabilities (0 high / 0 critical)
-Wave 0 Status:          COMPLETE & APPROVED
+Unit Test Suite:        38 files, 266 tests passed (100% PASS)
+API Contract Suite:     16 tests passed (pnpm test:api, subset of the above)
+Playwright E2E Suite:   27 tests passed (100% PASS, Electron 44.9.3)
+Production Audit:       No known vulnerabilities (pnpm audit --prod)
+Wave 0 Status:          COMPLETE, with the addendum below
 ```
+
+---
+
+## 5. Addendum: Claims Missed by Wave 0
+
+A follow-up review against the implementation found two completed-requirement claims in `docs/product-requirements.md` that the Wave 0 scan did not catch, because they did not use the absolute phrases it searched for.
+
+### Addendum Issue 1: EPUB CFI Anchoring
+
+- **Discrepancy**: Milestone 0.5 stated that highlights are anchored to "robust DOM selectors / EPUB CFIs". No EPUB CFI parser or generator exists; ADR 0005 explicitly rejected CFI as the locator strategy.
+- **Resolution**: The requirement, `docs/architecture.md`, and `docs/test-strategy.md` now describe the implemented W3C Web Annotation hybrid selectors (`TextQuoteSelector` + `TextPositionSelector`). EPUB CFI is listed as not implemented.
+
+### Addendum Issue 2: Repair Undo
+
+- **Discrepancy**: Milestone 0.8 listed "→ Undo" as a completed step of the safe repair loop, and the README principle called every repair "undoable". No undo command exists in the repair engine, CLI, or desktop UI.
+- **Resolution**: The documents now state the actual guarantee: the source file is never modified and repairs are written to a separate `_repaired_` file, so a repair is reverted by discarding that output. In-app Undo is listed as not implemented.

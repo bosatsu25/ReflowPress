@@ -44,7 +44,7 @@ flowchart TD
         L3[3. Publication Compatibility<br/>Real-world EPUB 2/3 test corpora]
         L4[4. Reader Rendering Tests<br/>DOM layout, vertical text, ruby, paging]
         L5[5. Accessibility Tests<br/>ARIA, screen reader tree, keyboard traps]
-        L6[6. Annotation & Storage Persistence<br/>CFI stability, schema migrations]
+        L6[6. Annotation & Storage Persistence<br/>Locator re-anchoring, schema migrations]
         L7[7. Library Query & Performance<br/>Large collection indexing, sort/filter]
     end
 
@@ -153,7 +153,8 @@ The test suite applies standard test design techniques across the Inspector, Loa
    pnpm audit --prod
    ```
 2. **CI Gates**:
-   - `verify`: Runs on `ubuntu-latest` running lint, typecheck, vitest (213 tests), and build.
+   - `verify`: Runs on `ubuntu-latest` executing `pnpm release:check` (version parity, API contracts, production audit, lint, typecheck, vitest with 266 tests, build, bundle budget, benchmark, and visual regression).
+   - `package-matrix`: Packages and smoke-tests the desktop app on Windows, macOS, and Linux.
    - `desktop-e2e`: Runs on `ubuntu-latest` under `xvfb-run -a pnpm test:e2e` (27 tests) with automated failure artifact capture and axe-core accessibility regression scanning.
 3. **Deterministic CI Pipeline**: GitHub Actions runs on `ubuntu-latest` with Node.js 22, verifying formatting, strict typing, unit tests, and workspace builds on every PR and push to `main`.
 4. **Golden Master Stability**: Structural and textual invariants are verified in unit testing, while visual pixel stability is checked via Playwright visual snapshots under `test:visual`.
