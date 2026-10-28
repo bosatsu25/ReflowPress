@@ -3,6 +3,8 @@ import * as path from "node:path";
 import { type SyncSnapshot } from "./models.js";
 import { serializeSyncBundle, deserializeSyncBundle } from "./bundle.js";
 
+export const DEFAULT_SYNC_LOCK_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
 export interface FolderSyncAdapterOptions {
   readonly syncFolderPath: string;
   readonly lockTimeoutMs?: number | undefined;
@@ -15,7 +17,7 @@ export class FolderSyncAdapter {
 
   constructor(options: FolderSyncAdapterOptions) {
     this.folderPath = path.resolve(options.syncFolderPath);
-    this.lockTimeoutMs = options.lockTimeoutMs ?? 60_000;
+    this.lockTimeoutMs = options.lockTimeoutMs ?? DEFAULT_SYNC_LOCK_TIMEOUT_MS;
   }
 
   public async acquireLock(): Promise<void> {

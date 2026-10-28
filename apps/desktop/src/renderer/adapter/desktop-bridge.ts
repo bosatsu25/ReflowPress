@@ -60,6 +60,24 @@ export const desktopBridge: DesktopBridge = {
     }
     return () => {};
   },
+  getCrashRecoveryStatus() {
+    if (
+      typeof window !== "undefined" &&
+      window.reflowPressDesktop?.getCrashRecoveryStatus
+    ) {
+      return window.reflowPressDesktop.getCrashRecoveryStatus();
+    }
+    return Promise.resolve(null);
+  },
+  clearCrashRecoveryStatus() {
+    if (
+      typeof window !== "undefined" &&
+      window.reflowPressDesktop?.clearCrashRecoveryStatus
+    ) {
+      return window.reflowPressDesktop.clearCrashRecoveryStatus();
+    }
+    return Promise.resolve(true);
+  },
   loadLibrary(): Promise<LibraryCatalog> {
     return getBridge().loadLibrary();
   },

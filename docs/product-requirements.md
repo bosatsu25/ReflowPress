@@ -101,11 +101,28 @@ To ensure absolute transparency between implemented features and planned milesto
 - Headless CLI subcommands: `reflowpress opds`, `reflowpress sync`, `reflowpress backup`, `reflowpress restore`, and `reflowpress device`.
 - Desktop Interoperability Workbench modal (`InteroperabilityModal`) with tabbed navigation and WCAG 2.2 AA accessibility.
 
-### Not Implemented (Planned in Future Milestones)
+### Implemented in Milestone 1.0 (Stable Release Hardening)
 
-- Production cross-platform installers and auto-updaters (Milestone 1.0)
-- Automatic crash recovery and session restoration (Milestone 1.0)
-- 1,000+ title high-scale performance benchmarks (Milestone 1.0)
+- Canonical `1.0.0` versioning across all workspace packages (`pnpm test:version`).
+- Public API contract freeze across the 16 `@reflowpress/*` packages (`pnpm test:api`).
+- Forward schema migration framework with `UpgradeRequiredError`; future-version data files are never overwritten.
+- Crash recovery with `.clean-shutdown` / `.active-session.json` markers, a recovery banner, and cleanup of orphaned `.tmp-*` files.
+- Renderer code splitting with an enforced bundle budget (`pnpm analyze:bundle`).
+- Electron 44 runtime with hardened fuses, strict CSP, and validated IPC.
+- `electron-builder` packaging for Windows (NSIS, portable) and Linux (AppImage, DEB), verified by a packaged smoke test and SHA-256 checksums.
+
+### Not Implemented or Deferred Beyond 1.0
+
+- Background auto-update (deferred by policy; see [Update Policy](updates.md)).
+- macOS packages (not distributed in 1.0; macOS users can run from source).
+- Code-signed Windows binaries (1.0 builds are unsigned; see [Code Signing Policy](code-signing.md)).
+- End-to-end startup benchmark: the 1,000-book benchmark measures `JsonLibraryRepository` load, filter, and sort only, not Electron cold start or first render.
+- Third-party accessibility certification (1.0 ships a self-audit; see [Accessibility Audit](accessibility-audit.md)).
+- Synchronized Media Overlays audio playback in the reader UI.
+- MTP device transfer.
+- EPUB CFI locators (annotations use W3C Web Annotation selectors).
+- In-app Undo for repairs (repairs never modify the source file).
+- Vivliostyle renderer (type-level contract only).
 
 ---
 
@@ -161,7 +178,7 @@ To ensure absolute transparency between implemented features and planned milesto
 
 - [x] Full-text search within the open publication with highlighted search hit navigation.
 - [x] Add, view, and delete local bookmarks.
-- [x] Multi-color text selection highlights anchored to robust DOM selectors / EPUB CFIs.
+- [x] Multi-color text selection highlights anchored to W3C Web Annotation hybrid selectors (`TextQuoteSelector` + `TextPositionSelector`, see ADR 0005). EPUB CFI locators are not implemented.
 - [x] Attach user notes and annotations to highlights.
 - [x] Export annotations to standard JSON, Markdown, and HTML.
 
@@ -192,7 +209,7 @@ To ensure absolute transparency between implemented features and planned milesto
 ### Milestone 0.8: Quality & Repair (Complete)
 
 - [x] Publication Health Diagnostic Suite: detailed reporting of missing assets, broken internal links, suspicious remote URLs, and malformed tags (`@reflowpress/quality`, 25+ stable diagnostic rules).
-- [x] Non-destructive Safe Repair: Inspect → Explain → Preview → Repair → Verify → Undo (`@reflowpress/repair`, canonical ZIP rewriter, transactional staging, regression abort, `.provenance.json`).
+- [x] Non-destructive Safe Repair: Inspect → Explain → Preview → Repair → Verify (`@reflowpress/repair`, canonical ZIP rewriter, transactional staging, regression abort, `.provenance.json`). Repairs are reversible because the source file is never modified and output goes to a separate `_repaired_` file; there is no in-app Undo command.
 - [x] PDF Quality Gate: programmatic assertions checking PDF openability, text layer extractability, font embedding, image presence, and page geometry (`BaselinePdfValidator`, `evaluateQualityGate`).
 - [x] 3-tier golden master regression testing framework and Playwright visual regression suite.
 - [x] Accessible Desktop Health & Repair UI (`HealthModal`) with live ARIA announcements, explicit textual badges, and diff previews.
@@ -208,12 +225,13 @@ To ensure absolute transparency between implemented features and planned milesto
 - [x] Headless CLI interoperability subcommands (`opds`, `sync`, `backup`, `restore`, `device`).
 - [x] Accessible Desktop Interoperability Modal with live announcements.
 
-### Milestone 1.0: Stable Release (Next Priority)
+### Milestone 1.0: Stable Release (Hardening)
 
-- [ ] Production cross-platform installers (Windows, macOS, Linux).
-- [ ] Crash recovery and state restoration.
-- [ ] Performance benchmarks (< 1s library load for 1,000+ titles).
-- [ ] API freeze and backward compatibility guarantees.
+- [x] Production installers for Windows and Linux. Builds are unsigned; macOS is not distributed.
+- [x] Crash recovery and state restoration.
+- [x] Repository-level performance benchmark (1,000-book catalog load, filter, and sort well under 1 s).
+- [ ] End-to-end library open benchmark including Electron startup and first render (not yet measured).
+- [x] API freeze and backward compatibility guarantees (`pnpm test:api`).
 
 ---
 

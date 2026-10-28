@@ -242,6 +242,75 @@ describe("Publication Quality Diagnostic Engine", () => {
       expect(secFinding).toBeDefined();
       expect(secFinding?.severity).toBe("warning");
     });
+
+    it("inspects EPUB Media Overlays, detects missing audio and generates report (EPUB-OVERLAY-001)", async () => {
+      const smilXml = `<?xml version="1.0" encoding="UTF-8"?>
+<smil xmlns="http://www.w3.org/ns/SMIL" xmlns:epub="http://www.idpf.org/2007/ops" version="3.0">
+  <body>
+    <seq id="seq1" epub:textref="c1.xhtml">
+      <par id="par1">
+        <text src="c1.xhtml#p1"/>
+        <audio src="audio/narration.mp3" clipBegin="0s" clipEnd="12.5s"/>
+      </par>
+    </seq>
+  </body>
+</smil>`;
+
+      const entries = [
+        {
+          name: "mimetype",
+          contents: Buffer.from("application/epub+zip"),
+          isStored: true,
+        },
+        {
+          name: "META-INF/container.xml",
+          contents: Buffer.from(
+            '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+          ),
+        },
+        {
+          name: "content.opf",
+          contents: Buffer.from(
+            '<package version="3.0" xmlns="http://www.idpf.org/2007/opf"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Audiobook</dc:title><dc:language>en</dc:language><dc:identifier>audio-1</dc:identifier></metadata><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml" media-overlay="c1-smil"/><item id="c1-smil" href="c1.smil" media-type="application/smil+xml"/><item id="nav" href="nav.xhtml" properties="nav" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c1"/></spine></package>',
+          ),
+        },
+        {
+          name: "c1.xhtml",
+          contents: Buffer.from(
+            '<html><body><p id="p1">Hello World</p></body></html>',
+          ),
+        },
+        {
+          name: "c1.smil",
+          contents: Buffer.from(smilXml),
+        },
+        {
+          name: "nav.xhtml",
+          contents: Buffer.from(
+            '<html><body><nav><ol><li><a href="c1.xhtml">C1</a></li></ol></nav></body></html>',
+          ),
+        },
+      ];
+
+      const epubPath = path.join(TEMP_DIR, "media-overlay-test.epub");
+      await fs.writeFile(epubPath, buildCanonicalEpubZip(entries));
+
+      const report = await inspectEpubHealth(epubPath);
+      expect(report.mediaOverlays).toBeDefined();
+      expect(report.mediaOverlays?.hasMediaOverlays).toBe(true);
+      expect(report.mediaOverlays?.documentCount).toBe(1);
+      expect(report.mediaOverlays?.totalDurationSeconds).toBeCloseTo(12.5);
+      expect(report.mediaOverlays?.missingAudioFiles).toEqual([
+        "audio/narration.mp3",
+      ]);
+
+      const overlayFinding = report.findings.find(
+        (f) => f.ruleId === "EPUB-OVERLAY-001",
+      );
+      expect(overlayFinding).toBeDefined();
+      expect(overlayFinding?.severity).toBe("warning");
+      expect(overlayFinding?.location?.path).toBe("c1.smil");
+    });
   });
 
   describe("PDF Health & Quality Gate", () => {

@@ -164,7 +164,7 @@ packages/
   renderer/    - Renderer interface contracts
   validation/  - Validation interface contracts
 apps/
-  desktop/     - Electron 33 + React 19 + Vite desktop workbench application
+  desktop/     - Electron 44 + React 19 + Vite desktop workbench application
   cli/         - Headless CLI entry point (export, inspect, validate, repair)
 ```
 
@@ -216,7 +216,7 @@ flowchart TD
 - `@reflowpress/validation`: Rules engine for EPUB diagnostic checks and PDF Quality Gate assertions.
 - `@reflowpress/library`: SQLite/file-based book indexing, cover generation, collections, and shelf queries.
 - `@reflowpress/search`: Inverted index and streaming search across publications and notes.
-- `@reflowpress/annotations`: Highlight anchoring (EPUB CFI / text selectors), notes, bookmark models, and export serializers.
+- `@reflowpress/annotations`: Highlight anchoring (W3C text quote and position selectors), notes, bookmark models, and export serializers.
 - `@reflowpress/storage`: Local filesystem abstraction, atomic file writing, backup rotation, and platform-specific path helpers.
 
 _Note: These packages represent an architectural roadmap. They will be introduced incrementally according to the milestone schedule rather than created prematurely._
@@ -571,6 +571,29 @@ flowchart TD
 1. **Non-Dependency**: AI is strictly optional. ReflowPress is completely usable, fast, and feature-complete in 100% offline, air-gapped environments without any AI components.
 2. **Downstream Integration via Open Artifacts**: Rather than embedding complex proprietary LLM runtimes directly into the reading loop, ReflowPress empowers users to export clean, semantic artifacts (e.g. structured Markdown, sanitized text layers, JSON notes) that can be seamlessly consumed by external tools (ChatGPT, NotebookLM, local Ollama/Llama.cpp models, or personal PKM tools).
 3. **User Consent & Privacy**: No document data or reading metadata will ever be transmitted to external AI endpoints without explicit, manual user initiation.
+
+---
+
+## Stable Runtime, Crash Recovery, and Schema Safety (Milestone 1.0)
+
+ReflowPress 1.0 hardens the runtime against ungraceful terminations, forward schema incompatibilities, and disk resource leakage:
+
+1. **Clean Shutdown Marker Protocol**:
+   - Maintains an `.active-session.json` marker containing PID and timestamp during active application runtime.
+   - On graceful exit (`before-quit`), writes a `.clean-shutdown` marker and cleans up the active session marker.
+   - On launch, if an active session is recorded without a `.clean-shutdown` marker, the application identifies that an unexpected shutdown occurred and offers a non-intrusive **Recovery Banner** to restore the user's workspace.
+
+2. **Temporary Artifact Janitor**:
+   - Interrupted atomic file writes can leave behind orphaned `.tmp-*` files.
+   - On application startup, the janitor scans `userData` and cache subdirectories, safely removing all orphaned temporary files.
+
+3. **Forward Schema Safety (`UpgradeRequiredError`)**:
+   - When encountering a library catalog, annotation store, reading state, or sync bundle created with a schema version newer than supported by the running binary, ReflowPress throws `UpgradeRequiredError`.
+   - The file is **never quarantined, truncated, or overwritten**. The user is prompted to upgrade ReflowPress, ensuring complete forward safety.
+
+4. **Multi-Platform Distribution Configuration**:
+   - `electron-builder.yml` packages the application for Windows (nsis/portable x64) and Linux (AppImage/deb x64). macOS is not distributed in 1.0.
+   - Establishes native file associations for `.epub` and `.pdf` and custom protocol handlers (`reflowpress://`).
 
 ---
 

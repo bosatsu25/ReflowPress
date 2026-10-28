@@ -48,13 +48,17 @@ reflowpress opds fetch https://standardebooks.org/opds/all
 
 ---
 
-## 4. Tested Compatible Client Applications
+## 4. Client Application Compatibility & Protocol Support
 
-| Application          | Platform                  | Protocol       | Status       |
-| :------------------- | :------------------------ | :------------- | :----------- |
-| **Thorium Reader**   | Desktop (Win/macOS/Linux) | OPDS 2.0 JSON  | Full Support |
-| **Moon+ Reader Pro** | Android                   | OPDS 2.0 / 1.2 | Full Support |
-| **Foliate**          | Linux Desktop             | OPDS 2.0 JSON  | Full Support |
-| **Panels**           | iOS / iPadOS              | OPDS 2.0 JSON  | Full Support |
-| **KyBook 3**         | iOS                       | OPDS 1.2 / 2.0 | Full Support |
-| **FBReader**         | Android / iOS / Desktop   | OPDS 1.2 / 2.0 | Full Support |
+ReflowPress validates its local OPDS server output against the Readium Web Publication Manifest and OPDS 2.0 specifications. The table below distinguishes between automated specification verification and expected interoperability:
+
+| Application          | Platform                  | Target Protocol | Compatibility Status               |
+| :------------------- | :------------------------ | :-------------- | :--------------------------------- |
+| **Thorium Reader**   | Desktop (Win/macOS/Linux) | OPDS 2.0 JSON   | Verified Compatible (Readium Spec) |
+| **Moon+ Reader Pro** | Android                   | OPDS 2.0 / 1.2  | Expected (Protocol-Compliant)      |
+| **Foliate**          | Linux Desktop             | OPDS 2.0 JSON   | Expected (Protocol-Compliant)      |
+| **Panels**           | iOS / iPadOS              | OPDS 2.0 JSON   | Expected (Protocol-Compliant)      |
+| **KyBook 3**         | iOS                       | OPDS 1.2 / 2.0  | Expected (Protocol-Compliant)      |
+| **FBReader**         | Android / iOS / Desktop   | OPDS 1.2 / 2.0  | Expected (Protocol-Compliant)      |
+
+For detailed test methodologies, empirical test logs, and guidelines for certifying third-party readers, see [Compatibility Testing](file:///c:/Users/tkmnk/GitHub/ReflowPress/docs/compatibility-testing.md).

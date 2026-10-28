@@ -50,6 +50,7 @@ import type { ReadingPositionStore } from "./reading-position-store.js";
 import type { JsonLibraryRepository } from "./library-repository.js";
 import type { JsonAnnotationRepository } from "./annotation-repository.js";
 import { scanLibraryPaths } from "./library-scanner.js";
+import type { CrashRecoveryManager } from "./crash-recovery.js";
 
 export function registerIpcHandlers(
   window: BrowserWindow,
@@ -58,7 +59,17 @@ export function registerIpcHandlers(
   annotationRepo: JsonAnnotationRepository,
   coversDir: string,
   initialFilePath: string | null = null,
+  crashRecovery?: CrashRecoveryManager,
 ): void {
+  ipcMain.handle("app:get-crash-recovery-status", async () => {
+    return crashRecovery?.getRecoveryStatus() ?? null;
+  });
+
+  ipcMain.handle("app:clear-crash-recovery-status", async () => {
+    crashRecovery?.clearRecoveryStatus();
+    return true;
+  });
+
   ipcMain.handle("app:get-initial-file", async () => {
     return initialFilePath;
   });
@@ -87,25 +98,51 @@ export function registerIpcHandlers(
           pub.metadata.identifier || `path:${normalizedAbsPath}`;
         const title = pub.metadata.title || path.basename(filePath);
 
-        return {
+        const result: LoadedPublicationResult = {
           kind: "epub",
           path: normalizedAbsPath,
           publicationId,
           publication: pub,
           title,
         };
+
+        if (crashRecovery) {
+          await crashRecovery.updateActiveSession({
+            lastActivePublication: {
+              id: publicationId,
+              filePath: normalizedAbsPath,
+              title,
+            },
+            lastView: "reader",
+          });
+        }
+
+        return result;
       }
 
       if (ext === ".pdf") {
         const publicationId = `path:${normalizedAbsPath}`;
         const title = path.basename(filePath, ".pdf");
 
-        return {
+        const result: LoadedPublicationResult = {
           kind: "pdf",
           path: normalizedAbsPath,
           publicationId,
           title,
         };
+
+        if (crashRecovery) {
+          await crashRecovery.updateActiveSession({
+            lastActivePublication: {
+              id: publicationId,
+              filePath: normalizedAbsPath,
+              title,
+            },
+            lastView: "reader",
+          });
+        }
+
+        return result;
       }
 
       throw new Error(`Unsupported publication format: ${ext}`);
@@ -113,7 +150,17 @@ export function registerIpcHandlers(
   );
 
   ipcMain.handle("publication:read-pdf", async (_event, filePath: string) => {
-    const buffer = await readFile(filePath);
+    if (!filePath || typeof filePath !== "string") {
+      throw new Error("Invalid file path: path must be a non-empty string");
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext !== ".pdf") {
+      throw new Error(
+        `Security violation: expected a .pdf file, received '${ext}'`,
+      );
+    }
+    const resolvedPath = path.resolve(filePath);
+    const buffer = await readFile(resolvedPath);
     return buffer;
   });
 
@@ -125,6 +172,11 @@ export function registerIpcHandlers(
     "position:set",
     async (_event, position: SavedReadingPosition) => {
       await positionStore.savePosition(position);
+      if (crashRecovery) {
+        await crashRecovery.updateActiveSession({
+          lastUpdatedAt: new Date().toISOString(),
+        });
+      }
     },
   );
 
@@ -233,14 +285,24 @@ export function registerIpcHandlers(
     "library:read-cover",
     async (_event, coverPath: string): Promise<string | null> => {
       try {
-        const buffer = await readFile(coverPath);
-        const ext = path.extname(coverPath).toLowerCase();
+        if (!coverPath || typeof coverPath !== "string") {
+          return null;
+        }
+        const resolvedPath = path.resolve(coverPath);
+        const ext = path.extname(resolvedPath).toLowerCase();
+        const validImageExts = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+        if (!validImageExts.includes(ext)) {
+          return null;
+        }
+        const buffer = await readFile(resolvedPath);
         const mimeType =
           ext === ".jpg" || ext === ".jpeg"
             ? "image/jpeg"
             : ext === ".webp"
               ? "image/webp"
-              : "image/png";
+              : ext === ".gif"
+                ? "image/gif"
+                : "image/png";
         return `data:${mimeType};base64,${buffer.toString("base64")}`;
       } catch {
         return null;

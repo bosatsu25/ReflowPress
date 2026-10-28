@@ -1,3 +1,4 @@
+import { UpgradeRequiredError } from "@reflowpress/core";
 import {
   type SyncSnapshot,
   type SyncManifest,
@@ -64,8 +65,10 @@ export function deserializeSyncBundle(
   const manifest = JSON.parse(manifestStr) as SyncManifest;
 
   if (manifest.schemaVersion > SYNC_SCHEMA_VERSION) {
-    throw new Error(
-      `Unsupported sync bundle schema version ${manifest.schemaVersion} (highest supported is ${SYNC_SCHEMA_VERSION})`,
+    throw new UpgradeRequiredError(
+      "Sync Bundle",
+      SYNC_SCHEMA_VERSION,
+      manifest.schemaVersion,
     );
   }
 

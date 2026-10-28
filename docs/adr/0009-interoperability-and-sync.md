@@ -52,6 +52,8 @@ In local workbench operations, books are identified by `LocalBookId` (derived fr
 ### 3. OPDS Strategy: OPDS 2.0 Primary with Read Compatibility
 
 - **Primary Standard**: ReflowPress adopts OPDS 2.0 (`application/opds+json`) for local feed generation and remote client browsing.
+- **Feed Title Default**: When unspecified, feed metadata defaults to `"ReflowPress Library"`. Custom titles may be provided via CLI `--title` or programmatic options.
+- **Acquisition Rel Semantics**: In accordance with Readium WebPub Manifest and OPDS 2.0 specifications, link relation (`rel`) can be specified as a scalar string or an array of strings. The ReflowPress feed generator produces standard `http://opds-spec.org/acquisition` links for direct book retrieval, and the feed parser accepts both single strings and arrays (including `http://opds-spec.org/acquisition/open-access`), ensuring maximum interoperability with external readers.
 - **OPDS 1.2 Compatibility**: For remote catalogs using Atom XML (e.g., Calibre / older feeds), the client includes an Atom XML parser fallback to ensure wide reader compatibility.
 
 ### 4. Local Read-Only OPDS Server Security
@@ -83,7 +85,7 @@ In local workbench operations, books are identified by `LocalBookId` (derived fr
     conflicts.json     # Unresolved merge conflicts
     books/             # Optional publication binaries (default: OFF to save bandwidth)
   ```
-- **Concurrency & Locking**: Multi-process folder access is guarded by `.sync.lock` leases with timestamped stale-lock expiration (60 seconds) and atomic temp-to-rename writes.
+- **Concurrency & Locking**: Multi-process folder access is guarded by `.sync.lock` leases with timestamped stale-lock expiration (15 minutes, `DEFAULT_SYNC_LOCK_TIMEOUT_MS`) and atomic temp-to-rename writes.
 
 ### 7. Three-Way Merge & Conflict Preservation
 

@@ -92,6 +92,13 @@ Each diagnostic rule is uniquely identified by a stable, immutable string ID in 
 | `EPUB-SEC-001` | Unsafe path traversal in archive  | `fatal`          | `manual`      | ZIP entry path contains `..`, `\`, absolute paths, or NUL characters.            |
 | `EPUB-SEC-002` | Unsafe executable script detected | `warning`        | `manual`      | Content document contains executable `<script>` tag or `javascript:` URI scheme. |
 
+### 2.9 Media Overlays Rules (`EPUB-OVERLAY-*`)
+
+| Rule ID            | Title                                       | Default Severity | Repairability | Description                                                                                    |
+| :----------------- | :------------------------------------------ | :--------------- | :------------ | :--------------------------------------------------------------------------------------------- |
+| `EPUB-OVERLAY-001` | Media Overlays audio file not found         | `warning`        | `manual`      | Audio file referenced in a SMIL 3.0 Media Overlay document does not exist in the EPUB archive. |
+| `EPUB-OVERLAY-002` | Invalid Media Overlay SMIL syntax/reference | `error`          | `manual`      | SMIL Media Overlay document contains invalid XML or references an undefined manifest ID.       |
+
 ---
 
 ## 3. PDF Quality Gate Rules

@@ -6,12 +6,18 @@ import {
   deduplicateFindings,
   type HealthReport,
   type QualityFinding,
+  type PublicationMediaOverlaysReport,
 } from "../models.js";
 import {
   extractReferencesFromCss,
   extractReferencesFromXml,
   resolveInternalPath,
 } from "./resource-graph.js";
+import {
+  parseSmilDocument,
+  type MediaOverlayDocument,
+} from "@reflowpress/epub";
+import { REFLOWPRESS_VERSION } from "@reflowpress/core";
 
 const KNOWN_MIME_TYPES: Record<string, string> = {
   ".xhtml": "application/xhtml+xml",
@@ -28,6 +34,12 @@ const KNOWN_MIME_TYPES: Record<string, string> = {
   ".ttf": "font/ttf",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
+  ".smil": "application/smil+xml",
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
+  ".ogg": "audio/ogg",
+  ".opus": "audio/opus",
 };
 
 interface ZipEntryInfo {
@@ -391,9 +403,16 @@ export async function inspectEpubHealth(
     const manifestElem = opfDoc.getElementsByTagName("manifest")[0];
     const manifestItemsById = new Map<
       string,
-      { href: string; mediaType: string; fullPath: string }
+      {
+        href: string;
+        mediaType: string;
+        fullPath: string;
+        mediaOverlay?: string | undefined;
+      }
     >();
     const manifestHrefsInArchive = new Set<string>();
+    const smilPaths = new Set<string>();
+    const manifestOverlayRefs = new Map<string, string>();
 
     if (!manifestElem) {
       findings.push({
@@ -411,6 +430,7 @@ export async function inspectEpubHealth(
         const id = item?.getAttribute("id");
         const href = item?.getAttribute("href");
         const mediaType = item?.getAttribute("media-type") ?? "";
+        const mediaOverlay = item?.getAttribute("media-overlay") ?? undefined;
 
         if (!id || !href) {
           findings.push({
@@ -425,8 +445,18 @@ export async function inspectEpubHealth(
         }
 
         const fullPath = resolveInternalPath(opfPath, href);
-        manifestItemsById.set(id, { href, mediaType, fullPath });
+        manifestItemsById.set(id, { href, mediaType, fullPath, mediaOverlay });
         manifestHrefsInArchive.add(fullPath);
+
+        if (mediaOverlay) {
+          manifestOverlayRefs.set(id, mediaOverlay);
+        }
+        if (
+          mediaType === "application/smil+xml" ||
+          fullPath.toLowerCase().endsWith(".smil")
+        ) {
+          smilPaths.add(fullPath);
+        }
 
         // Check if item exists in archive
         if (!entryMap.has(fullPath)) {
@@ -674,6 +704,89 @@ export async function inspectEpubHealth(
       }
     }
 
+    // Media Overlays & SMIL inspection
+    const smilDocuments: MediaOverlayDocument[] = [];
+    const missingAudioFiles = new Set<string>();
+
+    for (const [itemId, overlayId] of manifestOverlayRefs.entries()) {
+      rulesExecuted.add("EPUB-OVERLAY-002");
+      const overlayItem = manifestItemsById.get(overlayId);
+      if (!overlayItem) {
+        findings.push({
+          ruleId: "EPUB-OVERLAY-002",
+          severity: "error",
+          category: "resource",
+          message: `Manifest item '${itemId}' references undefined media-overlay '${overlayId}'.`,
+          location: { path: opfPath },
+          repairability: "manual",
+        });
+      } else {
+        smilPaths.add(overlayItem.fullPath);
+      }
+    }
+
+    if (smilPaths.size > 0) {
+      rulesExecuted.add("EPUB-OVERLAY-001");
+      rulesExecuted.add("EPUB-OVERLAY-002");
+    }
+
+    for (const smilPath of smilPaths) {
+      referencedAssets.add(smilPath);
+      const smilInfo = entryMap.get(smilPath);
+      if (!smilInfo) continue;
+
+      try {
+        const smilBuf = await readEntry(archive, smilInfo.entry);
+        const smilDoc = parseSmilDocument(smilBuf.toString("utf-8"), smilPath);
+        smilDocuments.push(smilDoc);
+
+        for (const audioRef of smilDoc.audioReferences) {
+          referencedAssets.add(audioRef);
+          if (!entryMap.has(audioRef)) {
+            missingAudioFiles.add(audioRef);
+            findings.push({
+              ruleId: "EPUB-OVERLAY-001",
+              severity: "warning",
+              category: "resource",
+              message: `Media Overlays audio file '${audioRef}' referenced in '${smilPath}' was not found in archive.`,
+              location: { path: smilPath },
+              evidence: [{ key: "audioRef", value: audioRef }],
+              repairability: "manual",
+            });
+          }
+        }
+      } catch (err) {
+        findings.push({
+          ruleId: "EPUB-OVERLAY-002",
+          severity: "error",
+          category: "resource",
+          message: `Failed to parse SMIL 3.0 Media Overlay document '${smilPath}': ${err instanceof Error ? err.message : String(err)}`,
+          location: { path: smilPath },
+          repairability: "manual",
+        });
+      }
+    }
+
+    let mediaOverlaysReport: PublicationMediaOverlaysReport | undefined =
+      undefined;
+    if (
+      smilDocuments.length > 0 ||
+      smilPaths.size > 0 ||
+      manifestOverlayRefs.size > 0
+    ) {
+      const totalDuration = smilDocuments.reduce(
+        (sum, d) => sum + d.totalDurationSeconds,
+        0,
+      );
+      mediaOverlaysReport = {
+        hasMediaOverlays: smilDocuments.length > 0,
+        totalDurationSeconds: Math.round(totalDuration * 1000) / 1000,
+        documentCount: smilDocuments.length,
+        documents: smilDocuments,
+        missingAudioFiles: Array.from(missingAudioFiles).sort(),
+      };
+    }
+
     // Check for orphan files in the archive
     // Excluded from orphan classification: mimetype, META-INF/*, the OPF file itself, or files with trailing '/' (directories)
     for (const entryPath of entryMap.keys()) {
@@ -704,6 +817,7 @@ export async function inspectEpubHealth(
       rulesExecuted,
       rulesSkipped,
       options?.toolVersion,
+      mediaOverlaysReport,
     );
   } finally {
     archive.close();
@@ -758,6 +872,7 @@ function finalizeReport(
   rulesExecuted: Set<string>,
   rulesSkipped: string[],
   toolVersion?: string,
+  mediaOverlays?: PublicationMediaOverlaysReport | undefined,
 ): HealthReport {
   const deduped = deduplicateFindings(findings);
   const summary = computeReportSummary(deduped);
@@ -770,6 +885,7 @@ function finalizeReport(
     summary,
     rulesExecuted: Array.from(rulesExecuted).sort(),
     rulesSkipped: [...rulesSkipped].sort(),
-    toolVersion: toolVersion ?? "0.1.0",
+    toolVersion: toolVersion ?? REFLOWPRESS_VERSION,
+    ...(mediaOverlays ? { mediaOverlays } : {}),
   };
 }

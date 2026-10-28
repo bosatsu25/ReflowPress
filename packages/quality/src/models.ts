@@ -1,3 +1,6 @@
+import type { PublicationMediaOverlaysReport } from "@reflowpress/epub";
+export type { PublicationMediaOverlaysReport };
+
 export type Severity = "info" | "warning" | "error" | "fatal";
 
 export type Repairability = "none" | "manual" | "safe-auto" | "review-required";
@@ -61,6 +64,7 @@ export interface HealthReport {
   readonly rulesExecuted: readonly string[];
   readonly rulesSkipped: readonly string[];
   readonly toolVersion: string;
+  readonly mediaOverlays?: PublicationMediaOverlaysReport | undefined;
 }
 
 export interface RuleDefinition {

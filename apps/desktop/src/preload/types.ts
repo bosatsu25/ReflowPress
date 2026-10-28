@@ -23,6 +23,24 @@ export interface LoadedPublicationResult {
   readonly title: string;
 }
 
+export interface CrashRecoverySessionInfo {
+  readonly pid: number;
+  readonly startedAt: string;
+  readonly lastActivePublication?: {
+    readonly id: string;
+    readonly filePath: string;
+    readonly title?: string;
+  };
+  readonly lastView?: "library" | "reader";
+  readonly lastUpdatedAt: string;
+}
+
+export interface CrashRecoveryStatus {
+  readonly crashedLastSession: boolean;
+  readonly lastActiveSession: CrashRecoverySessionInfo | null;
+  readonly cleanedTempFilesCount: number;
+}
+
 export interface DesktopBridge {
   openFileDialog(): Promise<string | null>;
   openMultipleFilesDialog(): Promise<string[]>;
@@ -35,6 +53,8 @@ export interface DesktopBridge {
   saveReadingPosition(position: SavedReadingPosition): Promise<void>;
   getInitialFile?(): Promise<string | null>;
   onOpenInitialFile?(callback: (filePath: string) => void): () => void;
+  getCrashRecoveryStatus?(): Promise<CrashRecoveryStatus | null>;
+  clearCrashRecoveryStatus?(): Promise<boolean>;
   // Library API
   loadLibrary(): Promise<LibraryCatalog>;
   saveLibrary(catalog: LibraryCatalog): Promise<void>;

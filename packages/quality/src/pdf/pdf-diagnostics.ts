@@ -5,6 +5,7 @@ import {
   type HealthReport,
   type QualityFinding,
 } from "../models.js";
+import { REFLOWPRESS_VERSION } from "@reflowpress/core";
 
 export interface PdfGeometryInfo {
   readonly pageNumber: number;
@@ -429,6 +430,6 @@ function finalizePdfReport(
     summary,
     rulesExecuted: Array.from(rulesExecuted).sort(),
     rulesSkipped: [...rulesSkipped].sort(),
-    toolVersion: toolVersion ?? "0.1.0",
+    toolVersion: toolVersion ?? REFLOWPRESS_VERSION,
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "@reflowpress/search",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "UI-independent electronic publication search domain, visible text extraction, and snippet generation",

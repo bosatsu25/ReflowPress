@@ -49,15 +49,19 @@ export async function detectDeviceProfile(
     return KNOWN_PROFILES.kobo;
   }
 
-  // Kindle check: documents directory exists
-  if (await checkDirExists("documents")) {
+  // Kindle check: documents directory AND system directory (standard Kindle mass storage layout)
+  const hasDocuments = await checkDirExists("documents");
+  const hasSystem = await checkDirExists("system");
+
+  if (hasDocuments && (hasSystem || (await checkDirExists(".kindle")))) {
     return KNOWN_PROFILES.kindle;
   }
 
-  // PocketBook check: system directory or Pocketbook
+  // PocketBook check: Pocketbook, Books, or system directory (without documents)
   if (
-    (await checkDirExists("system")) ||
-    (await checkDirExists("Pocketbook"))
+    (await checkDirExists("Pocketbook")) ||
+    (await checkDirExists("Books")) ||
+    hasSystem
   ) {
     return KNOWN_PROFILES.pocketbook;
   }
