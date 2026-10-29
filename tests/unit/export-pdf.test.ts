@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedPublication } from "@reflowpress/core";
 import { exportToPdf } from "@reflowpress/export";
+import { CHROMIUM_NO_SANDBOX_ENV } from "@reflowpress/renderer";
+
+// Chromium refuses to start sandboxed as root (as in this dev container and
+// many CI containers). Opt out explicitly, and only in that situation, so the
+// renderer's sandbox stays on by default everywhere else.
+if (
+  process.getuid?.() === 0 &&
+  process.env[CHROMIUM_NO_SANDBOX_ENV] === undefined
+) {
+  process.env[CHROMIUM_NO_SANDBOX_ENV] = "1";
+}
 
 describe("PDF Exporter", () => {
   const samplePublication: NormalizedPublication = {

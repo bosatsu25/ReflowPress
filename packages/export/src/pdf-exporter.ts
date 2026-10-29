@@ -1,7 +1,12 @@
 import type { NormalizedPublication } from "@reflowpress/core";
-import { ChromiumPdfRenderer } from "@reflowpress/renderer";
+import {
+  ChromiumPdfRenderer,
+  CHROMIUM_NO_SANDBOX_ENV,
+  isChromiumSandboxOptOut,
+} from "@reflowpress/renderer";
 import { BaselinePdfValidator } from "@reflowpress/validation";
 import { ExportError, type ExportOptions } from "./models.js";
+import { sanitizePublicationContent } from "./sanitizer.js";
 
 export interface PdfExportResult {
   readonly bytes: Uint8Array;
@@ -15,7 +20,20 @@ export async function exportToPdf(
 ): Promise<PdfExportResult> {
   const warnings: string[] = [];
 
-  const renderer = new ChromiumPdfRenderer();
+  if (isChromiumSandboxOptOut()) {
+    warnings.push(
+      `Chromium sandbox disabled by ${CHROMIUM_NO_SANDBOX_ENV}; the PDF renderer runs without OS-level isolation.`,
+    );
+  }
+
+  // The renderer only ever receives markup produced by the shared DOM sanitizer.
+  const renderer = new ChromiumPdfRenderer({
+    sanitizeContent: (pub) => {
+      const sanitized = sanitizePublicationContent(pub);
+      warnings.push(...sanitized.warnings);
+      return sanitized;
+    },
+  });
   let renderResult;
   try {
     const marginObj:

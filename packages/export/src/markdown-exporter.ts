@@ -5,6 +5,12 @@ import {
   type Element as XmlElement,
   type Node as XmlNode,
 } from "@xmldom/xmldom";
+import {
+  classifyUrl,
+  resolveRelativePath,
+  sanitizeSvgDocument,
+  sanitizeXmlNode,
+} from "./sanitizer.js";
 
 export interface MarkdownExportOptions {
   readonly assetDirectoryName?: string | undefined;
@@ -16,22 +22,149 @@ export interface MarkdownExportResult {
   readonly warnings: readonly string[];
 }
 
-function resolveRelativePath(baseHref: string, relativeHref: string): string {
-  if (relativeHref.startsWith("/")) {
-    return relativeHref.slice(1);
-  }
-  const parts = baseHref.split("/");
-  parts.pop();
-  const segs = relativeHref.split("/");
-  for (const seg of segs) {
-    if (seg === ".") continue;
-    if (seg === "..") {
-      parts.pop();
-    } else {
-      parts.push(seg);
+/** Maximum element nesting converted structurally; deeper content is flattened to text. */
+const MAX_CONVERSION_DEPTH = 256;
+
+/** Raster image types copied verbatim, with the file extensions allowed for each. */
+const RASTER_IMAGE_EXTENSIONS: ReadonlyMap<string, readonly string[]> = new Map(
+  [
+    ["image/png", ["png"]],
+    ["image/jpeg", ["jpg", "jpeg"]],
+    ["image/jpg", ["jpg", "jpeg"]],
+    ["image/gif", ["gif"]],
+    ["image/webp", ["webp"]],
+    ["image/avif", ["avif"]],
+    ["image/bmp", ["bmp"]],
+  ],
+);
+
+const MARKDOWN_ESCAPES: Readonly<Record<string, string>> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  "\\": "\\\\",
+  "[": "\\[",
+  "]": "\\]",
+  "`": "\\`",
+};
+
+/**
+ * Escapes decoded text for Markdown: HTML-significant characters become
+ * character references and link/code syntax is backslash-escaped, so text can
+ * never turn into raw HTML, links or autolinks.
+ */
+export function escapeMarkdownText(text: string): string {
+  return text.replace(/[&<>\\[\]`]/g, (ch) => MARKDOWN_ESCAPES[ch] ?? ch);
+}
+
+/** Collapses line breaks for inline-only Markdown contexts. */
+function singleLine(text: string): string {
+  return text.replace(/\s*[\r\n]+\s*/g, " ");
+}
+
+/**
+ * Encodes a link/image destination so it cannot break out of `( ... )`.
+ */
+function encodeMarkdownDestination(url: string): string {
+  return url.replace(/&/g, "&amp;").replace(
+    // eslint-disable-next-line no-control-regex
+    /[\s()<>"'`\\[\]\u0000-\u001f\u007f]/g,
+    (ch) => {
+      const code = ch.charCodeAt(0);
+      return code < 0x80
+        ? `%${code.toString(16).toUpperCase().padStart(2, "0")}`
+        : encodeURIComponent(ch);
+    },
+  );
+}
+
+/** Inline code span whose fence is longer than any backtick run in the content. */
+function codeSpan(content: string): string {
+  const text = singleLine(content);
+  if (!text.trim()) return "";
+  const longestRun = Math.max(
+    0,
+    ...(text.match(/`+/g) ?? []).map((run) => run.length),
+  );
+  const fence = "`".repeat(longestRun + 1);
+  const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";
+  return `${fence}${pad}${text}${pad}${fence}`;
+}
+
+/** Fenced code block whose fence cannot be closed by the content. */
+function fencedCodeBlock(content: string): string {
+  const longestRun = Math.max(
+    2,
+    ...(content.match(/`+/g) ?? []).map((run) => run.length),
+  );
+  const fence = "`".repeat(longestRun + 1);
+  return `\n\n${fence}\n${content.replace(/^\n+|\n+$/g, "")}\n${fence}\n\n`;
+}
+
+/**
+ * Emits a YAML double-quoted scalar. JSON string syntax is valid YAML; the
+ * characters YAML does not accept literally are additionally escaped.
+ */
+function yamlString(value: string): string {
+  return JSON.stringify(value).replace(
+    /[\u007f-\u009f\u2028\u2029\ufeff\ufffe\uffff]/g,
+    (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
+/** Iteratively collects the text content of a subtree (stack-safe). */
+function collectText(root: XmlNode): string {
+  let text = "";
+  const stack: XmlNode[] = [root];
+  for (;;) {
+    const node = stack.pop();
+    if (node === undefined) return text;
+    if (node.nodeType === 3 || node.nodeType === 4) {
+      text += node.nodeValue ?? "";
+      continue;
+    }
+    if (node.nodeType !== 1) continue;
+    const tag = (node.localName ?? node.nodeName).toLowerCase();
+    if (tag === "script" || tag === "style" || tag === "noscript") continue;
+    for (
+      let child: XmlNode | null = node.lastChild;
+      child;
+      child = child.previousSibling
+    ) {
+      stack.push(child);
     }
   }
-  return parts.join("/");
+}
+
+/** Linear tag stripper for markup that cannot be parsed at all. */
+function stripTagsLinear(markup: string): string {
+  let out = "";
+  let index = 0;
+  while (index < markup.length) {
+    const open = markup.indexOf("<", index);
+    if (open === -1) {
+      out += markup.slice(index);
+      break;
+    }
+    out += markup.slice(index, open);
+    const close = markup.indexOf(">", open + 1);
+    if (close === -1) {
+      out += markup.slice(open);
+      break;
+    }
+    out += " ";
+    index = close + 1;
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
+
+function sanitizeAssetName(rawName: string): string {
+  return (
+    rawName
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x1f\x7f<>:"/\\|?*()[\]\s`'&#%]/g, "_")
+      .replace(/^\.+/, "_") || "image"
+  );
 }
 
 class MarkdownConverter {
@@ -42,7 +175,9 @@ class MarkdownConverter {
   >;
   private readonly warnings: string[] = [];
   readonly extractedAssets = new Map<string, Uint8Array>();
+  private readonly assetNamesByHref = new Map<string, string | null>();
   private hasWarnedMathML = false;
+  private hasWarnedRemoteImage = false;
 
   constructor(
     resources: NormalizedPublication["resources"],
@@ -65,7 +200,7 @@ class MarkdownConverter {
 
   convertDocument(xhtml: string, sectionHref: string): string {
     const parser = new DOMParser({
-      errorHandler: (level: string, msg: unknown) => {
+      onError: (level: string, msg: unknown) => {
         if (level === "fatalError") {
           this.warnings.push(
             `XML parse warning in section '${sectionHref}': ${String(msg)}`,
@@ -76,22 +211,24 @@ class MarkdownConverter {
 
     let doc: XmlDocument;
     try {
-      doc = parser.parseFromString(xhtml, "text/xml");
+      doc = parser.parseFromString(xhtml, "application/xhtml+xml");
     } catch {
-      // Fallback plain regex stripping if XML is completely malformed
-      return xhtml
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
+      // Fallback: plain, fully escaped text if XML is completely malformed
+      return escapeMarkdownText(stripTagsLinear(xhtml));
     }
 
     const body = doc.getElementsByTagName("body")[0] || doc.documentElement;
-    return this.convertNode(body as unknown as XmlNode, sectionHref).trim();
+    if (!body) return "";
+    return this.convertNode(body as unknown as XmlNode, sectionHref, 0).trim();
   }
 
-  private convertNode(node: XmlNode, sectionHref: string): string {
-    if (node.nodeType === 3 /* TEXT_NODE */) {
-      return node.nodeValue || "";
+  private convertNode(
+    node: XmlNode,
+    sectionHref: string,
+    depth: number,
+  ): string {
+    if (node.nodeType === 3 /* TEXT_NODE */ || node.nodeType === 4) {
+      return escapeMarkdownText(node.nodeValue || "");
     }
 
     if (node.nodeType !== 1 /* ELEMENT_NODE */) {
@@ -99,11 +236,21 @@ class MarkdownConverter {
     }
 
     const el = node as unknown as XmlElement;
-    const tag = (el.tagName || "").toLowerCase();
+    const tag = (el.localName || el.tagName || "").toLowerCase();
 
     // Skip non-visible or script elements
-    if (tag === "script" || tag === "style" || tag === "noscript") {
+    if (
+      tag === "script" ||
+      tag === "style" ||
+      tag === "noscript" ||
+      tag === "template" ||
+      tag === "head"
+    ) {
       return "";
+    }
+
+    if (depth > MAX_CONVERSION_DEPTH) {
+      return escapeMarkdownText(singleLine(collectText(el)));
     }
 
     // Ruby handling: convert <ruby>基底<rt>ふりがな</rt></ruby> -> 基底（ふりがな）
@@ -111,7 +258,7 @@ class MarkdownConverter {
       return this.convertRuby(el);
     }
 
-    // MathML handling: preserve raw markup with warning
+    // MathML handling: preserve markup, but only after the shared DOM sanitizer
     if (tag === "math") {
       if (!this.hasWarnedMathML) {
         this.warnings.push(
@@ -119,19 +266,21 @@ class MarkdownConverter {
         );
         this.hasWarnedMathML = true;
       }
-      return el.toString();
+      return singleLine(sanitizeXmlNode(el, { markdownSafeText: true }));
     }
 
     // Headings
     if (/^h[1-6]$/.test(tag)) {
       const level = parseInt(tag[1]!, 10);
-      const content = this.convertChildren(el, sectionHref).trim();
+      const content = singleLine(
+        this.convertChildren(el, sectionHref, depth),
+      ).trim();
       return `\n\n${"#".repeat(level)} ${content}\n\n`;
     }
 
     // Paragraph
     if (tag === "p") {
-      const content = this.convertChildren(el, sectionHref).trim();
+      const content = this.convertChildren(el, sectionHref, depth).trim();
       return `\n\n${content}\n\n`;
     }
 
@@ -142,35 +291,29 @@ class MarkdownConverter {
 
     // Formatting
     if (tag === "strong" || tag === "b") {
-      const content = this.convertChildren(el, sectionHref).trim();
+      const content = singleLine(
+        this.convertChildren(el, sectionHref, depth),
+      ).trim();
       return content ? `**${content}**` : "";
     }
 
     if (tag === "em" || tag === "i") {
-      const content = this.convertChildren(el, sectionHref).trim();
+      const content = singleLine(
+        this.convertChildren(el, sectionHref, depth),
+      ).trim();
       return content ? `*${content}*` : "";
     }
 
     if (tag === "code") {
-      const content = el.textContent || "";
-      if (
-        el.parentNode &&
-        (
-          (el.parentNode as unknown as XmlElement).tagName || ""
-        ).toLowerCase() === "pre"
-      ) {
-        return content;
-      }
-      return `\`${content}\``;
+      return codeSpan(collectText(el));
     }
 
     if (tag === "pre") {
-      const content = el.textContent || "";
-      return `\n\n\`\`\`\n${content.replace(/^\n+|\n+$/g, "")}\n\`\`\`\n\n`;
+      return fencedCodeBlock(collectText(el));
     }
 
     if (tag === "blockquote") {
-      const content = this.convertChildren(el, sectionHref).trim();
+      const content = this.convertChildren(el, sectionHref, depth).trim();
       const quoted = content
         .split("\n")
         .map((line) => `> ${line}`)
@@ -180,23 +323,31 @@ class MarkdownConverter {
 
     // Lists
     if (tag === "ul") {
-      const items = this.convertListItems(el, false, sectionHref);
+      const items = this.convertListItems(el, false, sectionHref, depth);
       return `\n\n${items}\n\n`;
     }
 
     if (tag === "ol") {
-      const items = this.convertListItems(el, true, sectionHref);
+      const items = this.convertListItems(el, true, sectionHref, depth);
       return `\n\n${items}\n\n`;
     }
 
-    // Links
+    // Links: relative, fragment, http(s) and mailto only
     if (tag === "a") {
-      const href = el.getAttribute("href") || "";
-      const text = this.convertChildren(el, sectionHref).trim();
-      if (!href || href.startsWith("javascript:")) {
+      const href = (el.getAttribute("href") || "").trim();
+      const text = singleLine(
+        this.convertChildren(el, sectionHref, depth),
+      ).trim();
+      const kind = href ? classifyUrl(href) : "empty";
+      if (
+        kind !== "relative" &&
+        kind !== "fragment" &&
+        kind !== "http" &&
+        kind !== "mailto"
+      ) {
         return text;
       }
-      return `[${text || href}](${href})`;
+      return `[${text || escapeMarkdownText(singleLine(href))}](${encodeMarkdownDestination(href)})`;
     }
 
     // Images
@@ -206,18 +357,22 @@ class MarkdownConverter {
 
     // Tables
     if (tag === "table") {
-      return this.convertTable(el, sectionHref);
+      return this.convertTable(el, sectionHref, depth);
     }
 
     // Containers (div, section, article, span, etc.)
-    return this.convertChildren(el, sectionHref);
+    return this.convertChildren(el, sectionHref, depth);
   }
 
-  private convertChildren(el: XmlElement, sectionHref: string): string {
+  private convertChildren(
+    el: XmlElement,
+    sectionHref: string,
+    depth: number,
+  ): string {
     let result = "";
     const children = el.childNodes as unknown as XmlNode[];
     for (let i = 0; i < children.length; i += 1) {
-      result += this.convertNode(children[i]!, sectionHref);
+      result += this.convertNode(children[i]!, sectionHref, depth + 1);
     }
     return result;
   }
@@ -231,20 +386,20 @@ class MarkdownConverter {
     const children = rubyEl.childNodes as unknown as XmlNode[];
     for (let i = 0; i < children.length; i += 1) {
       const child = children[i]!;
-      if (child.nodeType === 3) {
+      if (child.nodeType === 3 || child.nodeType === 4) {
         currentBase += child.nodeValue || "";
       } else if (child.nodeType === 1) {
         const childEl = child as unknown as XmlElement;
-        const childTag = (childEl.tagName || "").toLowerCase();
+        const childTag = (childEl.localName || "").toLowerCase();
         if (childTag === "rt") {
-          const reading = (childEl.textContent || "").trim();
+          const reading = collectText(childEl).trim();
           output += `${currentBase}（${reading}）`;
           currentBase = "";
         } else if (childTag === "rp") {
           // ignore rp parentheses to avoid doubling
           continue;
         } else {
-          currentBase += childEl.textContent || "";
+          currentBase += collectText(childEl);
         }
       }
     }
@@ -253,38 +408,100 @@ class MarkdownConverter {
       output += currentBase;
     }
 
-    return output || rubyEl.textContent || "";
+    return escapeMarkdownText(singleLine(output || collectText(rubyEl)));
   }
 
   private convertImage(imgEl: XmlElement, sectionHref: string): string {
-    const src = imgEl.getAttribute("src") || "";
-    const alt = imgEl.getAttribute("alt") || "";
+    const src = (imgEl.getAttribute("src") || "").trim();
+    const alt = escapeMarkdownText(singleLine(imgEl.getAttribute("alt") || ""));
 
     if (!src) return "";
 
-    const resolved = resolveRelativePath(sectionHref, src);
+    const kind = classifyUrl(src);
     const res =
-      this.resourceMap.get(resolved) ||
-      this.resourceMap.get(src) ||
-      this.resourceMap.get(src.split("/").pop() || "");
+      kind === "relative"
+        ? this.resourceMap.get(resolveRelativePath(sectionHref, src)) ||
+          this.resourceMap.get(src) ||
+          this.resourceMap.get(src.split("/").pop() || "")
+        : undefined;
 
-    if (res) {
-      const rawName = res.href.split("/").pop() || "image.png";
-      // eslint-disable-next-line no-control-regex
-      const safeName = rawName.replace(/[\x00-\x1f\x7f<>:"/\\|?*]/g, "_");
-      const relativeAssetPath = `${this.assetDirName}/${safeName}`;
-      this.extractedAssets.set(safeName, res.bytes);
-      return `![${alt}](${relativeAssetPath})`;
+    const assetName = res ? this.extractAsset(res) : undefined;
+    if (assetName) {
+      const relativeAssetPath = `${this.assetDirName}/${assetName}`;
+      return `![${alt}](${encodeMarkdownDestination(relativeAssetPath)})`;
     }
 
-    // Keep external or unmapped URL
-    return `![${alt}](${src})`;
+    // Non-local (remote, data:, script) or unusable images are dropped.
+    if (!this.hasWarnedRemoteImage) {
+      this.warnings.push(
+        "Images that are not local raster/SVG publication resources were omitted from the Markdown output.",
+      );
+      this.hasWarnedRemoteImage = true;
+    }
+    return alt;
+  }
+
+  /**
+   * Copies an image resource into the asset map. Only raster images (with a
+   * matching extension) and sanitized SVG are written, so a published asset
+   * directory can never contain attacker-chosen HTML/script files.
+   */
+  private extractAsset(res: {
+    href: string;
+    bytes: Uint8Array;
+    mediaType: string;
+  }): string | undefined {
+    const cached = this.assetNamesByHref.get(res.href);
+    if (cached !== undefined) return cached ?? undefined;
+
+    const mediaType = res.mediaType.trim().toLowerCase();
+    const rawName = res.href.split("/").pop() || "image";
+    let name = sanitizeAssetName(rawName);
+    let bytes: Uint8Array | undefined;
+
+    const rasterExtensions = RASTER_IMAGE_EXTENSIONS.get(mediaType);
+    if (rasterExtensions) {
+      const ext = name.includes(".")
+        ? name.slice(name.lastIndexOf(".") + 1).toLowerCase()
+        : "";
+      if (!rasterExtensions.includes(ext)) {
+        name = `${name}.${rasterExtensions[0]}`;
+      }
+      bytes = res.bytes;
+    } else if (mediaType === "image/svg+xml") {
+      const sanitizedSvg = sanitizeSvgDocument(
+        new TextDecoder("utf-8").decode(res.bytes),
+      );
+      if (sanitizedSvg !== undefined) {
+        if (!name.toLowerCase().endsWith(".svg")) name = `${name}.svg`;
+        bytes = new TextEncoder().encode(sanitizedSvg);
+      }
+    }
+
+    if (!bytes) {
+      this.assetNamesByHref.set(res.href, null);
+      return undefined;
+    }
+
+    // Avoid silently overwriting a different asset with the same basename.
+    let uniqueName = name;
+    for (let n = 1; this.extractedAssets.has(uniqueName); n += 1) {
+      const dot = name.lastIndexOf(".");
+      uniqueName =
+        dot > 0
+          ? `${name.slice(0, dot)}-${n}${name.slice(dot)}`
+          : `${name}-${n}`;
+    }
+    this.extractedAssets.set(uniqueName, bytes);
+    this.assetNamesByHref.set(res.href, uniqueName);
+    return uniqueName;
   }
 
   private convertListItems(
     listEl: XmlElement,
     isOrdered: boolean,
     sectionHref: string,
+    depth: number,
   ): string {
     const lines: string[] = [];
     let count = 1;
@@ -293,24 +510,35 @@ class MarkdownConverter {
       const child = children[i]!;
       if (
         child.nodeType === 1 &&
-        ((child as unknown as XmlElement).tagName || "").toLowerCase() === "li"
+        ((child as unknown as XmlElement).localName || "").toLowerCase() ===
+          "li"
       ) {
         const text = this.convertChildren(
           child as unknown as XmlElement,
           sectionHref,
+          depth + 1,
         ).trim();
-        if (isOrdered) {
-          lines.push(`${count}. ${text}`);
-          count += 1;
-        } else {
-          lines.push(`- ${text}`);
-        }
+        const marker = isOrdered ? `${count}. ` : "- ";
+        if (isOrdered) count += 1;
+        // Indent continuation lines so nested blocks stay inside the item.
+        const indent = " ".repeat(marker.length);
+        const [first = "", ...rest] = text.split("\n");
+        lines.push(
+          [
+            `${marker}${first}`,
+            ...rest.map((line) => (line ? `${indent}${line}` : line)),
+          ].join("\n"),
+        );
       }
     }
     return lines.join("\n");
   }
 
-  private convertTable(tableEl: XmlElement, sectionHref: string): string {
+  private convertTable(
+    tableEl: XmlElement,
+    sectionHref: string,
+    depth: number,
+  ): string {
     const rows = tableEl.getElementsByTagName("tr") as unknown as XmlElement[];
     if (rows.length === 0) return "";
 
@@ -323,14 +551,17 @@ class MarkdownConverter {
         const cell = cells[c]!;
         if (cell.nodeType === 1) {
           const tag = (
-            (cell as unknown as XmlElement).tagName || ""
+            (cell as unknown as XmlElement).localName || ""
           ).toLowerCase();
           if (tag === "td" || tag === "th") {
-            const text = this.convertChildren(
-              cell as unknown as XmlElement,
-              sectionHref,
+            const text = singleLine(
+              this.convertChildren(
+                cell as unknown as XmlElement,
+                sectionHref,
+                depth + 1,
+              ),
             )
-              .replace(/[\n\r]+/g, " ")
+              .replace(/\|/g, "\\|")
               .trim();
             rowCells.push(text);
           }
@@ -387,15 +618,18 @@ export function exportToMarkdown(
         ? publication.metadata.creator.join(", ")
         : "";
 
+  const titleMd = escapeMarkdownText(singleLine(docTitle)).trim();
+  const authorMd = escapeMarkdownText(singleLine(docAuthor)).trim();
+
   const frontmatter = `---
-title: "${docTitle.replace(/"/g, '\\"')}"
-author: "${docAuthor.replace(/"/g, '\\"')}"
-language: "${docLang}"
+title: ${yamlString(docTitle)}
+author: ${yamlString(docAuthor)}
+language: ${yamlString(docLang)}
 generator: "ReflowPress Export Workbench"
 ---
 
-# ${docTitle}
-${docAuthor ? `\n*${docAuthor}*\n` : ""}
+# ${titleMd}
+${authorMd ? `\n*${authorMd}*\n` : ""}
 `;
 
   const sectionMarkdownParts: string[] = [];

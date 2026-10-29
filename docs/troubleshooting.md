@@ -63,6 +63,8 @@ This guide addresses common questions, operating conditions, and recovery proced
   reflowpress opds serve --port 8080 --catalog ./library.json --allow-lan
   ```
   Ensure your operating system firewall allows inbound traffic on port 8080 for private networks.
+- **Access token**: In LAN mode the catalog URL contains a random token that changes on every start, e.g. `http://<ip>:8080/<token>/opds/v2/catalog`. Requests without it return `404`. Copy the full URL printed by the CLI (or shown in the app) into your reader, replacing `localhost` with the computer's LAN address.
+- **`421 Misdirected Request`**: Without `--allow-lan`, the server only answers requests addressed to `127.0.0.1`, `localhost` or `[::1]`. Requests sent under any other host name are refused on purpose (DNS rebinding protection).
 
 ### WebDAV Sync Authentication
 
@@ -73,9 +75,38 @@ This guide addresses common questions, operating conditions, and recovery proced
   reflowpress sync webdav --url https://webdav.example.com/remote.php/webdav --user myuser
   ```
 
+### WebDAV sync fails with "HTTP 301/302/307/308"
+
+- **Cause**: ReflowPress never follows WebDAV redirects, so credentials and uploads only go to the server you configured.
+- **Solution**: Use the final URL the server redirects to (often the `https://` form, or the same path with a trailing `/`).
+
+### "Sync folder is locked by another process"
+
+- **Cause**: Another ReflowPress instance is syncing with the same folder. Locks expire after 15 minutes if that instance crashed.
+- **Solution**: Wait for the other sync to finish. Do not delete `.sync.lock` while another machine may be writing.
+
 ---
 
-## 5. Hardware E-Reader USB Transfers
+## 5. Export
+
+### PDF export fails with "Failed to launch headless Chromium with its sandbox enabled"
+
+- **Cause**: PDF export renders books in Chromium with its OS sandbox enabled, so a malicious publication cannot reach the rest of the system. Some Linux systems block the user namespaces the sandbox needs — notably Ubuntu 23.10 and later, through AppArmor — and when the export runs as root the sandbox is refused outright.
+- **Solution** (prefer the first):
+  1. Allow unprivileged user namespaces: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` (add it to `/etc/sysctl.d/` to make it permanent).
+  2. Or explicitly run the renderer without the sandbox, accepting the reduced isolation, for example in a container that is already isolated:
+     ```sh
+     REFLOWPRESS_CHROMIUM_NO_SANDBOX=1 reflowpress export book.epub --format pdf
+     ```
+     The export result then carries a warning that the sandbox was disabled.
+
+### Links or remote images are missing from exported HTML/PDF
+
+- **Cause**: Exports are self-contained and offline. Remote images, media, external hyperlinks and `srcset` are removed, scripts and event handlers are stripped, and a strict Content Security Policy is embedded. Only links within the book and images inside the publication are kept.
+
+---
+
+## 6. Hardware E-Reader USB Transfers
 
 ### Device Not Detected
 

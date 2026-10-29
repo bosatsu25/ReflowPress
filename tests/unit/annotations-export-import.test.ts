@@ -78,8 +78,13 @@ describe("Annotation Export & Import Engines", () => {
     expect(rep1.imported).toBe(0);
 
     // 2. Import file where an annotation ID collides with existing store but has different content
+    // (Imported records are rebuilt from model fields only, so the change must
+    // touch a real field: the bookmark's label.)
     const modifiedPayload = JSON.parse(jsonStr);
-    modifiedPayload.annotations[0].label = "Conflicting altered label";
+    const bookmarkRecord = modifiedPayload.annotations.find(
+      (a: { kind: string }) => a.kind === "bookmark",
+    );
+    bookmarkRecord.label = "Conflicting altered label";
     const modifiedJson = JSON.stringify(modifiedPayload);
 
     const { store: updatedStore, report: rep2 } = importAnnotationsFromJson(
