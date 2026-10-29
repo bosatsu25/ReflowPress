@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants as fsConstants, createReadStream } from "node:fs";
-import { copyFile, link, unlink, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { copyFile, link, open, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   openZipArchive,
@@ -85,6 +85,12 @@ export async function executeRepair(
     let opfFilePath = source.opfFilePath;
 
     const appliedActions: string[] = [];
+    // Media-type fixes are batched per OPF so it is scanned and rebuilt once,
+    // however many items need fixing.
+    const mediaTypeFixes = new Map<
+      string,
+      { actionId: string; target: RepairManifestItemTarget }[]
+    >();
 
     // 2. Apply repair actions
     for (const action of plan.actions) {
@@ -119,16 +125,26 @@ export async function executeRepair(
         }
       } else if (action.type === "manifest-mediatype") {
         const targetFile = action.targetFile || opfFilePath;
-        const opfBytes = targetFile ? entriesMap.get(targetFile) : undefined;
-        if (targetFile && opfBytes && action.manifestItem) {
-          const updated = setManifestItemMediaType(
-            opfBytes,
-            action.manifestItem,
-          );
-          if (updated) {
-            entriesMap.set(targetFile, updated);
-            appliedActions.push(action.id);
-          }
+        if (targetFile && action.manifestItem) {
+          const fixes = mediaTypeFixes.get(targetFile) ?? [];
+          fixes.push({ actionId: action.id, target: action.manifestItem });
+          mediaTypeFixes.set(targetFile, fixes);
+        }
+      }
+    }
+
+    for (const [targetFile, fixes] of mediaTypeFixes) {
+      const opfBytes = entriesMap.get(targetFile);
+      if (!opfBytes) continue;
+      const result = setManifestItemMediaTypes(
+        opfBytes,
+        fixes.map((fix) => fix.target),
+      );
+      if (!result) continue;
+      entriesMap.set(targetFile, result.opf);
+      for (const fix of fixes) {
+        if (result.appliedIds.has(fix.target.id)) {
+          appliedActions.push(fix.actionId);
         }
       }
     }
@@ -178,7 +194,7 @@ export async function executeRepair(
       const provenance: RepairProvenance = {
         toolVersion: options.toolVersion ?? REFLOWPRESS_VERSION,
         timestamp: new Date().toISOString(),
-        sourceSha256: await sha256File(sourcePath),
+        sourceSha256: await sha256File(sourcePath, limits.maxArchiveBytes),
         outputSha256: sha256(repairedBuffer),
         appliedRuleIds: plan.actions.map((a) => a.ruleId),
       };
@@ -328,7 +344,12 @@ async function commitOutput(
         });
       } catch (err) {
         await safeUnlink(candidate);
-        if (!isAlreadyExistsError(err)) throw err;
+        if (!isAlreadyExistsError(err)) {
+          // We created the sidecar before the write failed (e.g. ENOSPC);
+          // an EEXIST sidecar belongs to someone else and is left alone.
+          await safeUnlink(provenancePath);
+          throw err;
+        }
         conflict = provenancePath;
         continue;
       }
@@ -361,51 +382,69 @@ async function publishExclusive(
 }
 
 /**
- * Sets the media-type of the specific manifest `<item>` that has the given id
- * and declared media-type. The OPF is edited in place (byte-for-byte outside
- * the attribute value) rather than re-serialized. Returns undefined when no
- * matching item is found.
+ * Sets the media-type of each targeted manifest `<item>`, identified by its id
+ * and declared media-type, in a single scan. The OPF is edited in place
+ * (byte-for-byte outside the attribute values) rather than re-serialized.
+ * Items whose id appears more than once are ambiguous and left untouched.
+ * Returns undefined when nothing was changed.
  */
-function setManifestItemMediaType(
+function setManifestItemMediaTypes(
   opf: Buffer,
-  target: RepairManifestItemTarget,
-): Buffer | undefined {
+  targets: readonly RepairManifestItemTarget[],
+): { opf: Buffer; appliedIds: Set<string> } | undefined {
   // latin1 maps each byte to one code unit, so ASCII markup can be scanned and
   // the untouched bytes round-trip exactly, whatever the document encoding.
   const xml = opf.toString("latin1");
-  const id = Buffer.from(target.id, "utf-8").toString("latin1");
-  const declared = Buffer.from(target.declaredMediaType, "utf-8").toString(
-    "latin1",
-  );
-  if (!isXmlText(target.expectedMediaType)) return undefined;
-  const replacement = Buffer.from(
-    escapeXmlAttribute(target.expectedMediaType),
-    "utf-8",
-  ).toString("latin1");
+  const toLatin1 = (value: string) =>
+    Buffer.from(value, "utf-8").toString("latin1");
 
-  const edits: XmlAttributeSpan[] = [];
+  const byId = new Map<
+    string,
+    { target: RepairManifestItemTarget; declared: string; replacement: string }
+  >();
+  for (const target of targets) {
+    if (!isXmlText(target.expectedMediaType)) continue;
+    byId.set(toLatin1(target.id), {
+      target,
+      declared: toLatin1(target.declaredMediaType),
+      replacement: toLatin1(escapeXmlAttribute(target.expectedMediaType)),
+    });
+  }
+  if (byId.size === 0) return undefined;
+
+  const idCounts = new Map<string, number>();
+  const candidates: { id: string; span: XmlAttributeSpan }[] = [];
   scanManifestItemTags(xml, (attributes) => {
     const idSpan = attributes.get("id");
+    if (!idSpan) return;
+    const id = xml.slice(idSpan.valueStart, idSpan.valueEnd);
+    const entry = byId.get(id);
+    if (!entry) return;
+    idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
     const mediaTypeSpan = attributes.get("media-type");
     if (
-      idSpan &&
       mediaTypeSpan &&
-      xml.slice(idSpan.valueStart, idSpan.valueEnd) === id &&
-      xml.slice(mediaTypeSpan.valueStart, mediaTypeSpan.valueEnd) === declared
+      xml.slice(mediaTypeSpan.valueStart, mediaTypeSpan.valueEnd) ===
+        entry.declared
     ) {
-      edits.push(mediaTypeSpan);
+      candidates.push({ id, span: mediaTypeSpan });
     }
   });
+
+  const edits = candidates.filter(({ id }) => idCounts.get(id) === 1);
   if (edits.length === 0) return undefined;
 
   let result = "";
   let last = 0;
-  for (const edit of edits) {
-    result += xml.slice(last, edit.valueStart) + replacement;
-    last = edit.valueEnd;
+  const appliedIds = new Set<string>();
+  for (const { id, span } of edits) {
+    const entry = byId.get(id)!;
+    result += xml.slice(last, span.valueStart) + entry.replacement;
+    last = span.valueEnd;
+    appliedIds.add(entry.target.id);
   }
   result += xml.slice(last);
-  return Buffer.from(result, "latin1");
+  return { opf: Buffer.from(result, "latin1"), appliedIds };
 }
 
 interface XmlAttributeSpan {
@@ -621,12 +660,33 @@ function sha256(data: Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-async function sha256File(filePath: string): Promise<string> {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(filePath)) {
-    hash.update(chunk as Buffer);
+/**
+ * Hashes a regular file of at most `maxBytes`, reading through one handle so
+ * a path swapped for a device or FIFO cannot make the read endless.
+ */
+async function sha256File(filePath: string, maxBytes: number): Promise<string> {
+  const handle = await open(filePath, "r");
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > maxBytes) {
+      throw new Error(
+        `Source changed during repair or is not a regular file: ${filePath}`,
+      );
+    }
+    const hash = createHash("sha256");
+    if (info.size > 0) {
+      for await (const chunk of handle.createReadStream({
+        start: 0,
+        end: info.size - 1,
+        autoClose: false,
+      })) {
+        hash.update(chunk as Buffer);
+      }
+    }
+    return hash.digest("hex");
+  } finally {
+    await handle.close();
   }
-  return hash.digest("hex");
 }
 
 async function safeUnlink(filePath: string): Promise<void> {

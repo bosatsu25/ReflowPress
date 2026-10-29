@@ -12,7 +12,7 @@ import {
 } from "@reflowpress/export";
 import {
   inspectEpubHealth,
-  inspectPdfHealth,
+  inspectPdfFile,
   evaluateQualityGate,
   type QualityProfile,
   type HealthReport,
@@ -1010,8 +1010,7 @@ async function runInspect(
     let report: HealthReport;
     if (file.toLowerCase().endsWith(".pdf")) {
       try {
-        const bytes = await fs.readFile(file);
-        report = inspectPdfHealth(bytes, file);
+        report = await inspectPdfFile(file);
       } catch (err) {
         logErr(
           `Failed to read PDF '${file}': ${err instanceof Error ? err.message : String(err)}`,
@@ -1098,8 +1097,7 @@ async function runValidate(
 
   for (const file of files) {
     try {
-      const bytes = await fs.readFile(file);
-      const report = inspectPdfHealth(bytes, file);
+      const report = await inspectPdfFile(file);
       const gateResult = evaluateQualityGate(report, options.profile);
       results.push(gateResult);
       if (!gateResult.passed) {

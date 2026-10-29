@@ -1,3 +1,4 @@
+import { open } from "node:fs/promises";
 import { inflateSync } from "node:zlib";
 import {
   computeReportSummary,
@@ -58,6 +59,56 @@ export interface PdfHealthInspectionOptions {
 
 const latin1Decoder = new TextDecoder("latin1");
 
+/**
+ * Inspects a PDF file, checking its size before reading it so an oversized
+ * file is reported (PDF-STRUCT-003) without being loaded into memory.
+ */
+export async function inspectPdfFile(
+  filePath: string,
+  options?: PdfHealthInspectionOptions | undefined,
+): Promise<HealthReport> {
+  const limits = resolvePdfLimits(options?.limits);
+  const handle = await open(filePath, "r");
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) {
+      throw new Error(`Not a regular file: ${filePath}`);
+    }
+    if (info.size > limits.maxInputBytes) {
+      return finalizePdfReport(
+        filePath,
+        [oversizedPdfFinding(info.size, limits, filePath)],
+        Date.now(),
+        new Set(["PDF-STRUCT-003"]),
+        [],
+        options?.toolVersion,
+      );
+    }
+    return inspectPdfHealth(await handle.readFile(), filePath, options);
+  } finally {
+    await handle.close();
+  }
+}
+
+function oversizedPdfFinding(
+  byteLength: number,
+  limits: PdfInspectionLimits,
+  sourcePath: string,
+): QualityFinding {
+  return {
+    ruleId: "PDF-STRUCT-003",
+    severity: "fatal",
+    category: "pdf-structure",
+    message: `PDF is ${byteLength} bytes, which exceeds the ${limits.maxInputBytes}-byte inspection limit; it was not parsed.`,
+    location: { path: sourcePath },
+    evidence: [
+      { key: "byteLength", value: byteLength },
+      { key: "limitBytes", value: limits.maxInputBytes },
+    ],
+    repairability: "none",
+  };
+}
+
 export function inspectPdfHealth(
   pdfBytes: Uint8Array,
   sourcePath = "document.pdf",
@@ -104,18 +155,7 @@ export function inspectPdfHealth(
   }
 
   if (pdfBytes.length > limits.maxInputBytes) {
-    findings.push({
-      ruleId: "PDF-STRUCT-003",
-      severity: "fatal",
-      category: "pdf-structure",
-      message: `PDF is ${pdfBytes.length} bytes, which exceeds the ${limits.maxInputBytes}-byte inspection limit; it was not parsed.`,
-      location: { path: sourcePath },
-      evidence: [
-        { key: "byteLength", value: pdfBytes.length },
-        { key: "limitBytes", value: limits.maxInputBytes },
-      ],
-      repairability: "none",
-    });
+    findings.push(oversizedPdfFinding(pdfBytes.length, limits, sourcePath));
     return finish();
   }
 
@@ -655,10 +695,17 @@ function decodeStreamContent(
           err instanceof RangeError &&
           (err as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE"
         ) {
-          // The work done up to the cap still counts against the budget.
-          budget.remaining -= maxOutputLength;
           budget.limitReached = true;
         }
+        // A failed inflate (truncated, bad checksum, over the cap) may still
+        // have produced up to maxOutputLength bytes, so the work counts
+        // against the budget. Deflate expands at most ~1032:1, which keeps
+        // small corrupt streams from using up the budget.
+        budget.remaining -= Math.min(
+          maxOutputLength,
+          rawStreamBytes.length * 1032,
+        );
+        if (budget.remaining <= 0) budget.limitReached = true;
         // Fall back to scanning the raw bytes, as for corrupt streams.
       }
     }
@@ -762,16 +809,21 @@ function sumParenthesizedLengths(
   start: number,
   end: number,
 ): number {
+  // A character loop bounded by `end`: indexOf would search past the array
+  // to the end of the text block for every array, which is quadratic.
   let total = 0;
-  let cursor = start;
-  for (;;) {
-    const opener = text.indexOf("(", cursor);
-    if (opener === -1 || opener >= end) return total;
-    const closer = text.indexOf(")", opener + 1);
-    if (closer === -1 || closer >= end) return total;
-    total += closer - opener - 1;
-    cursor = closer + 1;
+  let opener = -1;
+  for (let i = start; i < end; i += 1) {
+    const code = text.charCodeAt(i);
+    if (opener === -1) {
+      if (code === 0x28) opener = i; // "("
+    } else if (code === 0x29) {
+      // ")"
+      total += i - opener - 1;
+      opener = -1;
+    }
   }
+  return total;
 }
 
 /**

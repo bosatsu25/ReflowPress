@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { readFile, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { loadEpub } from "@reflowpress/epub";
-import { inspectEpubHealth, inspectPdfHealth } from "@reflowpress/quality";
+import { inspectEpubHealth, inspectPdfFile } from "@reflowpress/quality";
 import { planRepairs, executeRepair } from "@reflowpress/repair";
 import { OpdsServer } from "@reflowpress/opds";
 import {
@@ -511,8 +511,7 @@ export function registerIpcHandlers(
       "Inspecting a publication",
     );
     if (allowedPath.toLowerCase().endsWith(".pdf")) {
-      const bytes = await readFile(allowedPath);
-      return inspectPdfHealth(bytes, allowedPath);
+      return inspectPdfFile(allowedPath);
     }
     return inspectEpubHealth(allowedPath);
   });

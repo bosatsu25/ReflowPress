@@ -344,7 +344,7 @@ async function expectNoOutputs(expected: readonly string[]): Promise<void> {
 async function readZipText(zipPath: string, entryName: string) {
   const { archive, entries } = await openZipArchive(
     zipPath,
-    { maxArchiveBytes: 16 * MiB, maxEntries: 100 },
+    { maxArchiveBytes: 16 * MiB, maxEntries: 10_000 },
     (message) => new Error(message),
   );
   try {
@@ -424,3 +424,83 @@ async function writeZip(
   await fs.writeFile(filePath, Buffer.concat([...localFiles, directory, end]));
   return filePath;
 }
+
+describe("Review regressions: media-type repairs", () => {
+  function opfWith(items: string): string {
+    return `<package version="3.0" xmlns="http://www.idpf.org/2007/opf"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>T</dc:title><dc:language>en</dc:language><dc:identifier>id</dc:identifier></metadata><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>${items}<item id="nav" href="nav.xhtml" properties="nav" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c1"/></spine></package>`;
+  }
+
+  function epubWithOpf(
+    opf: string,
+    extra: readonly RawZipEntry[],
+  ): RawZipEntry[] {
+    return [
+      { name: "mimetype", content: "application/epub+zip" },
+      ...brokenEpub()
+        .filter((e) => e.name !== "mimetype")
+        .map((e) =>
+          e.name === "OEBPS/content.opf" ? { ...e, content: opf } : e,
+        ),
+      ...extra,
+    ];
+  }
+
+  it("applies many media-type fixes with a single scan of the OPF", async () => {
+    const count = 4000;
+    const items = Array.from(
+      { length: count },
+      (_, i) => `<item id="s${i}" href="s${i}.css" media-type="text/plain"/>`,
+    ).join("");
+    const css = Array.from({ length: count }, (_, i) => ({
+      name: `OEBPS/s${i}.css`,
+      content: "p{}",
+    }));
+    const sourcePath = await writeZip(
+      "many.epub",
+      epubWithOpf(opfWith(items), css),
+    );
+    const result = await timedRepair(sourcePath);
+    expect(result.success).toBe(true);
+    const repairedOpf = await readZipText(
+      result.outputPath!,
+      "OEBPS/content.opf",
+    );
+    expect(repairedOpf).toContain(
+      '<item id="s0" href="s0.css" media-type="text/css"/>',
+    );
+  });
+
+  it("leaves items with duplicate ids untouched", async () => {
+    const sourcePath = await writeZip(
+      "dupe.epub",
+      epubWithOpf(
+        opfWith(
+          '<item id="x" href="a.css" media-type="text/plain"/><item id="x" href="b.js" media-type="text/plain"/>',
+        ),
+        [
+          { name: "OEBPS/a.css", content: "p{}" },
+          { name: "OEBPS/b.js", content: "" },
+        ],
+      ),
+    );
+    const report = await inspectEpubHealth(sourcePath);
+    const { plan } = planRepairs(report);
+    const result = await executeRepair(sourcePath, plan, {
+      outputDir: tempDir,
+    });
+    expect(
+      result.actionsApplied.some((id) =>
+        plan.actions.some(
+          (a) => a.id === id && a.type === "manifest-mediatype",
+        ),
+      ),
+    ).toBe(false);
+    if (result.outputPath) {
+      const repairedOpf = await readZipText(
+        result.outputPath,
+        "OEBPS/content.opf",
+      );
+      expect(repairedOpf).not.toContain('href="b.js" media-type="text/css"');
+    }
+  });
+});

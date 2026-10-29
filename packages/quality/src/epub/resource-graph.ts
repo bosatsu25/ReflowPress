@@ -22,30 +22,48 @@ export function resolveInternalPath(
   baseDocPath: string,
   relativeRef: string,
 ): string {
-  // Strip fragment and query if present
-  const cleanRef = relativeRef.split("#")[0]?.split("?")[0] ?? "";
-  if (!cleanRef) return "";
+  return createInternalPathResolver(baseDocPath)(relativeRef);
+}
 
-  // If already absolute within zip (e.g. starts with '/')
-  if (cleanRef.startsWith("/")) {
-    return cleanRef.slice(1);
-  }
-
+/**
+ * Returns a resolver for references from one document. The base directory is
+ * computed once; plain references (no '.', '..' or empty segments) are joined
+ * directly, so resolving many references under a deep path stays cheap.
+ */
+export function createInternalPathResolver(
+  baseDocPath: string,
+): (relativeRef: string) => string {
   const baseDir = baseDocPath.includes("/")
     ? baseDocPath.slice(0, baseDocPath.lastIndexOf("/"))
     : "";
-  const parts = baseDir ? baseDir.split("/") : [];
+  let baseParts: string[] | undefined;
 
-  for (const seg of cleanRef.split("/")) {
-    if (seg === "" || seg === ".") continue;
-    if (seg === "..") {
-      parts.pop();
-    } else {
-      parts.push(seg);
+  return (relativeRef) => {
+    // Strip fragment and query if present
+    const cleanRef = relativeRef.split("#")[0]?.split("?")[0] ?? "";
+    if (!cleanRef) return "";
+
+    // If already absolute within zip (e.g. starts with '/')
+    if (cleanRef.startsWith("/")) {
+      return cleanRef.slice(1);
     }
-  }
 
-  return parts.join("/");
+    if (!/(?:^|\/)\.{0,2}(?:\/|$)/.test(cleanRef)) {
+      return baseDir ? `${baseDir}/${cleanRef}` : cleanRef;
+    }
+
+    baseParts ??= baseDir ? baseDir.split("/") : [];
+    const parts = [...baseParts];
+    for (const seg of cleanRef.split("/")) {
+      if (seg === "" || seg === ".") continue;
+      if (seg === "..") {
+        parts.pop();
+      } else {
+        parts.push(seg);
+      }
+    }
+    return parts.join("/");
+  };
 }
 
 /**

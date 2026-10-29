@@ -14,6 +14,7 @@ import {
   extractReferencesFromXml,
   getRuleDefinition,
   inspectEpubHealth,
+  inspectPdfFile,
   inspectPdfHealth,
   resolveEpubArchiveLimits,
   type HealthReport,
@@ -676,3 +677,74 @@ function timedSync<T>(run: () => T): T {
   expect(performance.now() - start).toBeLessThan(TIME_LIMIT_MS);
   return result;
 }
+
+describe("Review regressions", () => {
+  function pdfWithStreams(streams: readonly Buffer[], flate: boolean): Buffer {
+    const parts: Buffer[] = [Buffer.from("%PDF-1.4\n", "latin1")];
+    streams.forEach((stream, i) => {
+      parts.push(
+        Buffer.from(
+          `${i + 100} 0 obj<</Type/Page/Contents ${i + 1} 0 R>>endobj\n${i + 1} 0 obj<<${flate ? "/Filter /FlateDecode" : ""}>>\nstream\n`,
+          "latin1",
+        ),
+        stream,
+        Buffer.from("\nendstream\nendobj\n", "latin1"),
+      );
+    });
+    return Buffer.concat(parts);
+  }
+
+  it("scans many TJ arrays in one text block in linear time", () => {
+    const content = Buffer.from(`BT ${"[]TJ".repeat(800_000)} ET`, "latin1");
+    timedSync(() =>
+      inspectPdfHealth(pdfWithStreams([content], false), "tj.pdf"),
+    );
+  });
+
+  it("charges failed inflates against the total budget", () => {
+    // Truncated zlib streams: inflating fails only after producing ~8 MiB.
+    const truncated = deflateSync(Buffer.alloc(8 * MiB, 0x20)).subarray(0, -4);
+    const report = timedSync(() =>
+      inspectPdfHealth(
+        pdfWithStreams(new Array<Buffer>(10).fill(truncated), true),
+        "truncated.pdf",
+        { limits: { maxTotalInflatedBytes: 32 * MiB } },
+      ),
+    );
+    expect(findRule(report, "PDF-STRUCT-004")).toBeDefined();
+  });
+
+  it("reports an oversized PDF file without reading it", async () => {
+    const filePath = path.join(tempDir, "big.pdf");
+    await fs.writeFile(filePath, Buffer.alloc(4096, 0x20));
+    const report = await inspectPdfFile(filePath, {
+      limits: { maxInputBytes: 1024 },
+    });
+    expect(findRule(report, "PDF-STRUCT-003")).toBeDefined();
+  });
+
+  it("bounds reference resolution under a very deep chapter path", async () => {
+    const images = Array.from(
+      { length: 50_000 },
+      (_, i) => `<img src="${i}.png"/>`,
+    ).join("");
+    const epubPath = await writeZip(
+      "deep.epub",
+      minimalEpub({
+        chapter: {
+          name: `OEBPS/${"a/".repeat(2000)}d.xhtml`,
+          content: `<html><body>${images}</body></html>`,
+          method: 8,
+        },
+      }),
+    );
+    const report = await timed(() => inspectEpubHealth(epubPath));
+    expect(
+      report.findings.some(
+        (f) =>
+          f.ruleId === "EPUB-RESOURCE-002" &&
+          f.message.startsWith("Reference checking stopped"),
+      ),
+    ).toBe(true);
+  });
+});

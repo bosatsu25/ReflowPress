@@ -12,6 +12,7 @@ import {
 import {
   extractReferencesFromCss,
   extractReferencesFromXml,
+  createInternalPathResolver,
   resolveInternalPath,
 } from "./resource-graph.js";
 import {
@@ -54,6 +55,19 @@ const KNOWN_MIME_TYPES: Record<string, string> = {
  * broken reference per element) and exhaust memory while building the report.
  */
 const MAX_FINDINGS_PER_RULE = 1000;
+
+/** Distinct references resolved per document and per inspection. */
+const MAX_REFERENCES_PER_DOCUMENT = 20_000;
+const MAX_REFERENCES_TOTAL = 100_000;
+
+/** Stand-in counted towards the summary once a rule's list is full. */
+const RESOURCE_002_OVERFLOW: QualityFinding = {
+  ruleId: "EPUB-RESOURCE-002",
+  severity: "warning",
+  category: "resource",
+  message: "",
+  repairability: "manual",
+};
 
 /** Upper bound on the length of attacker-controlled text quoted in findings. */
 const MAX_QUOTED_TEXT_CHARS = 512;
@@ -131,12 +145,21 @@ class BoundedFindingList {
 
   constructor(private readonly maxPerRule: number) {}
 
-  push(finding: QualityFinding): void {
-    const signature = `${finding.ruleId}::${finding.location?.path ?? ""}::${finding.location?.line ?? ""}::${finding.message}`;
-    if (this.signatures.has(signature)) return;
+  /** Appends a one-off notice that must not disappear into a rule's cap. */
+  pushNotice(finding: QualityFinding): void {
+    this.items.push(finding);
+  }
 
+  /** Whether further findings of this rule only count towards the summary. */
+  isFull(ruleId: string): boolean {
+    return (this.perRule.get(ruleId) ?? 0) >= this.maxPerRule;
+  }
+
+  push(finding: QualityFinding): void {
     const count = this.perRule.get(finding.ruleId) ?? 0;
     if (count < this.maxPerRule) {
+      const signature = `${finding.ruleId}::${finding.location?.path ?? ""}::${finding.location?.line ?? ""}::${finding.message}`;
+      if (this.signatures.has(signature)) return;
       this.perRule.set(finding.ruleId, count + 1);
       this.signatures.add(signature);
       this.items.push(finding);
@@ -838,9 +861,12 @@ export async function inspectEpubHealth(
     // Only archive entries that exist; used to classify orphans, so it never
     // needs to hold more paths than the archive has entries.
     const referencedAssets = new Set<string>();
+    let referencesChecked = 0;
+    let referenceCheckTruncated = false;
     // Collect references from manifest-declared XHTML/CSS documents only.
     // Undeclared entries are reported as orphans without being decompressed.
     for (const entryPath of manifestHrefsInArchive) {
+      let referencesInDocument = 0;
       const isMarkup =
         entryPath.endsWith(".xhtml") || entryPath.endsWith(".html");
       const isCss = entryPath.endsWith(".css");
@@ -875,11 +901,27 @@ export async function inspectEpubHealth(
           ? extractReferencesFromXml(text)
           : extractReferencesFromCss(text),
       );
+      const resolve = createInternalPathResolver(entryPath);
       for (const ref of refs) {
-        const target = resolveInternalPath(entryPath, ref);
+        // Resolution costs at least the path length, so the number of
+        // references checked is bounded per document and per inspection.
+        if (
+          referencesInDocument >= MAX_REFERENCES_PER_DOCUMENT ||
+          referencesChecked >= MAX_REFERENCES_TOTAL
+        ) {
+          referenceCheckTruncated = true;
+          break;
+        }
+        referencesInDocument += 1;
+        referencesChecked += 1;
+        const target = resolve(ref);
         if (!target) continue;
         if (entryMap.has(target)) {
           referencedAssets.add(target);
+          continue;
+        }
+        if (findings.isFull("EPUB-RESOURCE-002")) {
+          findings.push(RESOURCE_002_OVERFLOW);
           continue;
         }
         findings.push({
@@ -989,9 +1031,20 @@ export async function inspectEpubHealth(
       };
     }
 
-    // Check for orphan files in the archive
+    if (referenceCheckTruncated) {
+      findings.pushNotice({
+        ruleId: "EPUB-RESOURCE-002",
+        severity: "info",
+        category: "resource",
+        message: `Reference checking stopped at its limit (${MAX_REFERENCES_PER_DOCUMENT} per document, ${MAX_REFERENCES_TOTAL} in total); remaining references and orphan resources were not checked.`,
+        repairability: "none",
+      });
+    }
+
+    // Check for orphan files in the archive (skipped when references were
+    // not all checked, since unchecked references would look like orphans)
     // Excluded from orphan classification: mimetype, META-INF/*, the OPF file itself, or files with trailing '/' (directories)
-    for (const entryPath of entryMap.keys()) {
+    for (const entryPath of referenceCheckTruncated ? [] : entryMap.keys()) {
       if (entryPath.endsWith("/")) continue;
       if (entryPath === "mimetype") continue;
       if (entryPath.startsWith("META-INF/")) continue;
