@@ -17,6 +17,7 @@ const DANGEROUS_TAGS = new Set([
   "object",
   "embed",
   "applet",
+  "iframe",
   "frame",
   "frameset",
   "base",

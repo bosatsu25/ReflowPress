@@ -42,11 +42,20 @@ export async function showOpenMultipleFilesNativeDialog(
   return result.filePaths;
 }
 
+export type DirectoryPurpose = "library" | "sync" | "device";
+
+const DIRECTORY_DIALOG_TITLES: Record<DirectoryPurpose, string> = {
+  library: "Add Publication Folder to Library",
+  sync: "Choose Sync Folder",
+  device: "Choose E-Reader Drive",
+};
+
 export async function showOpenDirectoryNativeDialog(
   window: BrowserWindow,
+  purpose: DirectoryPurpose = "library",
 ): Promise<string | null> {
   const result = await dialog.showOpenDialog(window, {
-    title: "Add Publication Folder to Library",
+    title: DIRECTORY_DIALOG_TITLES[purpose],
     properties: ["openDirectory"],
   });
 
@@ -96,6 +105,22 @@ export async function showOpenAnnotationFileDialog(
       { name: "ReflowPress Annotations (*.json)", extensions: ["json"] },
       { name: "All Files", extensions: ["*"] },
     ],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  return result.filePaths[0] ?? null;
+}
+
+export async function showOpenBackupFileDialog(
+  window: BrowserWindow,
+): Promise<string | null> {
+  const result = await dialog.showOpenDialog(window, {
+    title: "Restore ReflowPress Backup",
+    properties: ["openFile"],
+    filters: [{ name: "ReflowPress Backup (*.json)", extensions: ["json"] }],
   });
 
   if (result.canceled || result.filePaths.length === 0) {

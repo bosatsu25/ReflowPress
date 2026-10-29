@@ -8,8 +8,8 @@ const bridge = {
   openMultipleFilesDialog() {
     return ipcRenderer.invoke("dialog:open-multiple-files");
   },
-  openDirectoryDialog() {
-    return ipcRenderer.invoke("dialog:open-directory");
+  openDirectoryDialog(purpose) {
+    return ipcRenderer.invoke("dialog:open-directory", purpose);
   },
   loadPublication(filePath) {
     return ipcRenderer.invoke("publication:load", filePath);
@@ -43,9 +43,6 @@ const bridge = {
   // Library API
   loadLibrary() {
     return ipcRenderer.invoke("library:load");
-  },
-  saveLibrary(catalog) {
-    return ipcRenderer.invoke("library:save", catalog);
   },
   scanLibraryPaths(paths) {
     return ipcRenderer.invoke("library:scan-paths", paths);
@@ -107,6 +104,9 @@ const bridge = {
   },
   showOpenAnnotationFileDialog() {
     return ipcRenderer.invoke("dialog:open-annotation-file");
+  },
+  showOpenBackupFileDialog() {
+    return ipcRenderer.invoke("dialog:open-backup-file");
   },
   inspectPublication(filePath) {
     return ipcRenderer.invoke("publication:inspect", filePath);

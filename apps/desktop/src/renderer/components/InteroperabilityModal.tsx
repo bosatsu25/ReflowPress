@@ -108,7 +108,7 @@ export const InteroperabilityModal: React.FC<InteroperabilityModalProps> = ({
   };
 
   const handleSelectFolder = async () => {
-    const dir = await desktopBridge.openDirectoryDialog();
+    const dir = await desktopBridge.openDirectoryDialog("sync");
     if (dir) setFolderPath(dir);
   };
 
@@ -182,7 +182,7 @@ export const InteroperabilityModal: React.FC<InteroperabilityModalProps> = ({
   };
 
   const handleSelectRestoreFile = async () => {
-    const file = await desktopBridge.openFileDialog();
+    const file = await desktopBridge.showOpenBackupFileDialog();
     if (file) {
       setRestoreBundlePath(file);
       setRestorePlan(null);
@@ -218,11 +218,13 @@ export const InteroperabilityModal: React.FC<InteroperabilityModalProps> = ({
   };
 
   const handleDiscoverDevices = async () => {
+    if (!deviceMountPath) {
+      setErrorMessage("Please choose the device drive first.");
+      return;
+    }
     try {
       setErrorMessage(null);
-      const devices = await desktopBridge.discoverDevices(
-        deviceMountPath || undefined,
-      );
+      const devices = await desktopBridge.discoverDevices(deviceMountPath);
       setDetectedDevices(devices);
       if (devices.length === 0) {
         setStatusMessage("No e-reader device found at specified location.");
@@ -584,9 +586,10 @@ export const InteroperabilityModal: React.FC<InteroperabilityModalProps> = ({
                 >
                   <input
                     type="text"
-                    placeholder="Path to sync folder..."
+                    readOnly
+                    aria-label="Sync folder"
+                    placeholder="Choose a sync folder with Browse..."
                     value={folderPath}
-                    onChange={(e) => setFolderPath(e.target.value)}
                     style={{ flex: 1, padding: "6px 10px" }}
                   />
                   <button
@@ -754,9 +757,10 @@ export const InteroperabilityModal: React.FC<InteroperabilityModalProps> = ({
                 >
                   <input
                     type="text"
-                    placeholder="Path to backup bundle JSON..."
+                    readOnly
+                    aria-label="Backup bundle"
+                    placeholder="Choose a backup bundle with Select File..."
                     value={restoreBundlePath}
-                    onChange={(e) => setRestoreBundlePath(e.target.value)}
                     style={{ flex: 1, padding: "6px 10px" }}
                   />
                   <button
@@ -923,14 +927,16 @@ export const InteroperabilityModal: React.FC<InteroperabilityModalProps> = ({
                 >
                   <input
                     type="text"
-                    placeholder="Device mount point / drive path (e.g. /Volumes/KOBOeReader, D:\)..."
+                    readOnly
+                    aria-label="Device drive"
+                    placeholder="Choose the e-reader drive with Browse..."
                     value={deviceMountPath}
-                    onChange={(e) => setDeviceMountPath(e.target.value)}
                     style={{ flex: 1, padding: "6px 10px" }}
                   />
                   <button
                     onClick={async () => {
-                      const dir = await desktopBridge.openDirectoryDialog();
+                      const dir =
+                        await desktopBridge.openDirectoryDialog("device");
                       if (dir) setDeviceMountPath(dir);
                     }}
                     style={{ padding: "6px 12px", cursor: "pointer" }}

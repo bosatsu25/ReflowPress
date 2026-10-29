@@ -13,6 +13,8 @@ electronFuses:
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
+  # The renderer is served from app://, so file:// pages need no extra rights.
+  grantFileProtocolExtraPrivileges: false
 
 files:
   - apps/desktop/dist/**/*

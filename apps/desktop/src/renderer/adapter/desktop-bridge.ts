@@ -25,8 +25,8 @@ export const desktopBridge: DesktopBridge = {
   openMultipleFilesDialog(): Promise<string[]> {
     return getBridge().openMultipleFilesDialog();
   },
-  openDirectoryDialog(): Promise<string | null> {
-    return getBridge().openDirectoryDialog();
+  openDirectoryDialog(purpose) {
+    return getBridge().openDirectoryDialog(purpose);
   },
   loadPublication(filePath: string): Promise<LoadedPublicationResult> {
     return getBridge().loadPublication(filePath);
@@ -80,9 +80,6 @@ export const desktopBridge: DesktopBridge = {
   },
   loadLibrary(): Promise<LibraryCatalog> {
     return getBridge().loadLibrary();
-  },
-  saveLibrary(catalog: LibraryCatalog): Promise<void> {
-    return getBridge().saveLibrary(catalog);
   },
   scanLibraryPaths(
     paths: string[],
@@ -144,6 +141,9 @@ export const desktopBridge: DesktopBridge = {
   },
   showOpenAnnotationFileDialog() {
     return getBridge().showOpenAnnotationFileDialog();
+  },
+  showOpenBackupFileDialog() {
+    return getBridge().showOpenBackupFileDialog();
   },
   inspectPublication(filePath) {
     return getBridge().inspectPublication(filePath);

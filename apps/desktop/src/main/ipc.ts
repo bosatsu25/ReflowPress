@@ -1,4 +1,9 @@
-import { ipcMain, type BrowserWindow } from "electron";
+import {
+  dialog,
+  ipcMain,
+  type BrowserWindow,
+  type IpcMainInvokeEvent,
+} from "electron";
 import { readFile, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { loadEpub } from "@reflowpress/epub";
@@ -14,8 +19,6 @@ import {
   createRestorePlan,
   applyRestore,
   type SyncSnapshot,
-  type SyncRecord,
-  type SyncLibraryBookData,
 } from "@reflowpress/sync";
 import {
   FilesystemDeviceAdapter,
@@ -24,7 +27,6 @@ import {
 import type { LoadedPublicationResult } from "../preload/types.js";
 import type { SavedReadingPosition } from "@reflowpress/reader";
 import {
-  type LibraryBook,
   type LibraryCatalog,
   type ScanResult,
   removeBookFromCatalog,
@@ -45,12 +47,32 @@ import {
   showOpenDirectoryNativeDialog,
   showSaveFileDialog,
   showOpenAnnotationFileDialog,
+  showOpenBackupFileDialog,
+  type DirectoryPurpose,
 } from "./file-dialog.js";
 import type { ReadingPositionStore } from "./reading-position-store.js";
 import type { JsonLibraryRepository } from "./library-repository.js";
 import type { JsonAnnotationRepository } from "./annotation-repository.js";
 import { scanLibraryPaths } from "./library-scanner.js";
 import type { CrashRecoveryManager } from "./crash-recovery.js";
+import {
+  PathGrantRegistry,
+  PathAccessDeniedError,
+  samePath,
+} from "./security/path-grants.js";
+import { isTrustedSender, UntrustedSenderError } from "./security/ipc-guard.js";
+import {
+  pickEditableBookFields,
+  syncRecordsToCatalogBooks,
+} from "./sync-catalog.js";
+
+/** Backup bundles above this size are refused before parsing. */
+const MAX_BACKUP_BUNDLE_BYTES = 32 * 1024 * 1024;
+
+export interface IpcSecurityOptions {
+  readonly pathGrants: PathGrantRegistry;
+  readonly isRendererUrl: (url: string) => boolean;
+}
 
 export function registerIpcHandlers(
   window: BrowserWindow,
@@ -60,43 +82,123 @@ export function registerIpcHandlers(
   coversDir: string,
   initialFilePath: string | null = null,
   crashRecovery?: CrashRecoveryManager,
+  security: IpcSecurityOptions = {
+    pathGrants: new PathGrantRegistry(),
+    isRendererUrl: () => false,
+  },
 ): void {
-  ipcMain.handle("app:get-crash-recovery-status", async () => {
+  const { pathGrants } = security;
+  const webContentsId = window.webContents.id;
+
+  // Every privileged channel is registered through this wrapper, so a call
+  // from the book iframe or any other frame is refused before the handler
+  // runs.
+  function handle<A extends unknown[], R>(
+    channel: string,
+    handler: (event: IpcMainInvokeEvent, ...args: A) => R | Promise<R>,
+  ): void {
+    ipcMain.handle(channel, (event, ...args) => {
+      if (!isTrustedSender(event, webContentsId, security.isRendererUrl)) {
+        throw new UntrustedSenderError(channel);
+      }
+      return handler(event, ...(args as A));
+    });
+  }
+
+  async function isLibraryBookPath(filePath: string): Promise<boolean> {
+    const catalog = await libraryRepo.load();
+    return catalog.books.some(
+      (book) => book.filePath !== "" && samePath(book.filePath, filePath),
+    );
+  }
+
+  /** Publications are readable when the user picked them or they are in the library. */
+  async function requireReadablePublication(
+    filePath: unknown,
+    purpose: string,
+  ): Promise<string> {
+    if (typeof filePath === "string" && filePath.length > 0) {
+      if (pathGrants.isGranted(filePath, "read")) {
+        return path.resolve(filePath);
+      }
+      if (await isLibraryBookPath(filePath)) {
+        return path.resolve(filePath);
+      }
+    }
+    throw new PathAccessDeniedError(purpose);
+  }
+
+  async function confirm(message: string, detail: string): Promise<boolean> {
+    const { response } = await dialog.showMessageBox(window, {
+      type: "warning",
+      buttons: ["Cancel", "Allow"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      message,
+      detail,
+    });
+    return response === 1;
+  }
+
+  handle("app:get-crash-recovery-status", async () => {
     return crashRecovery?.getRecoveryStatus() ?? null;
   });
 
-  ipcMain.handle("app:clear-crash-recovery-status", async () => {
+  handle("app:clear-crash-recovery-status", async () => {
     crashRecovery?.clearRecoveryStatus();
     return true;
   });
 
-  ipcMain.handle("app:get-initial-file", async () => {
+  handle("app:get-initial-file", async () => {
     return initialFilePath;
   });
 
-  ipcMain.handle("dialog:open-file", async () => {
-    return showOpenFileNativeDialog(window);
+  // Dialog results are the only way the renderer obtains a usable path.
+  handle("dialog:open-file", async () => {
+    const selected = await showOpenFileNativeDialog(window);
+    if (selected) pathGrants.grantFile(selected, ["read"]);
+    return selected;
   });
 
-  ipcMain.handle("dialog:open-multiple-files", async () => {
-    return showOpenMultipleFilesNativeDialog(window);
+  handle("dialog:open-multiple-files", async () => {
+    const selected = await showOpenMultipleFilesNativeDialog(window);
+    for (const file of selected) pathGrants.grantFile(file, ["read"]);
+    return selected;
   });
 
-  ipcMain.handle("dialog:open-directory", async () => {
-    return showOpenDirectoryNativeDialog(window);
+  handle("dialog:open-directory", async (_event, purpose?: unknown) => {
+    const directoryPurpose: DirectoryPurpose =
+      purpose === "sync" || purpose === "device" ? purpose : "library";
+    const selected = await showOpenDirectoryNativeDialog(
+      window,
+      directoryPurpose,
+    );
+    if (selected) {
+      // Library folders are only scanned; sync and device folders are
+      // written to.
+      pathGrants.grantDirectory(
+        selected,
+        directoryPurpose === "library" ? ["read"] : ["read", "write"],
+      );
+    }
+    return selected;
   });
 
-  ipcMain.handle(
+  handle(
     "publication:load",
-    async (_event, filePath: string): Promise<LoadedPublicationResult> => {
-      const ext = path.extname(filePath).toLowerCase();
-      const normalizedAbsPath = path.resolve(filePath);
+    async (_event, filePath: unknown): Promise<LoadedPublicationResult> => {
+      const normalizedAbsPath = await requireReadablePublication(
+        filePath,
+        "Opening a publication",
+      );
+      const ext = path.extname(normalizedAbsPath).toLowerCase();
 
       if (ext === ".epub") {
         const pub = await loadEpub(normalizedAbsPath);
         const publicationId =
           pub.metadata.identifier || `path:${normalizedAbsPath}`;
-        const title = pub.metadata.title || path.basename(filePath);
+        const title = pub.metadata.title || path.basename(normalizedAbsPath);
 
         const result: LoadedPublicationResult = {
           kind: "epub",
@@ -122,7 +224,7 @@ export function registerIpcHandlers(
 
       if (ext === ".pdf") {
         const publicationId = `path:${normalizedAbsPath}`;
-        const title = path.basename(filePath, ".pdf");
+        const title = path.basename(normalizedAbsPath, ".pdf");
 
         const result: LoadedPublicationResult = {
           kind: "pdf",
@@ -149,57 +251,55 @@ export function registerIpcHandlers(
     },
   );
 
-  ipcMain.handle("publication:read-pdf", async (_event, filePath: string) => {
-    if (!filePath || typeof filePath !== "string") {
-      throw new Error("Invalid file path: path must be a non-empty string");
-    }
-    const ext = path.extname(filePath).toLowerCase();
+  handle("publication:read-pdf", async (_event, filePath: unknown) => {
+    const resolvedPath = await requireReadablePublication(
+      filePath,
+      "Reading a PDF",
+    );
+    const ext = path.extname(resolvedPath).toLowerCase();
     if (ext !== ".pdf") {
       throw new Error(
         `Security violation: expected a .pdf file, received '${ext}'`,
       );
     }
-    const resolvedPath = path.resolve(filePath);
-    const buffer = await readFile(resolvedPath);
-    return buffer;
+    return readFile(resolvedPath);
   });
 
-  ipcMain.handle("position:get", async (_event, publicationId: string) => {
+  handle("position:get", async (_event, publicationId: string) => {
     return positionStore.getPosition(publicationId);
   });
 
-  ipcMain.handle(
-    "position:set",
-    async (_event, position: SavedReadingPosition) => {
-      await positionStore.savePosition(position);
-      if (crashRecovery) {
-        await crashRecovery.updateActiveSession({
-          lastUpdatedAt: new Date().toISOString(),
-        });
-      }
-    },
-  );
+  handle("position:set", async (_event, position: SavedReadingPosition) => {
+    await positionStore.savePosition(position);
+    if (crashRecovery) {
+      await crashRecovery.updateActiveSession({
+        lastUpdatedAt: new Date().toISOString(),
+      });
+    }
+  });
 
   // Library Handlers
-  ipcMain.handle("library:load", async () => {
+  handle("library:load", async () => {
     const catalog = await libraryRepo.load();
     const verified = await libraryRepo.verifyAvailability(catalog);
     return verified;
   });
 
-  ipcMain.handle("library:save", async (_event, catalog: LibraryCatalog) => {
-    await libraryRepo.save(catalog);
-  });
-
-  ipcMain.handle(
+  handle(
     "library:scan-paths",
     async (
       _event,
-      pathsToScan: string[],
+      pathsToScan: unknown,
     ): Promise<{ catalog: LibraryCatalog; result: ScanResult }> => {
+      if (!Array.isArray(pathsToScan)) {
+        throw new PathAccessDeniedError("Scanning the library");
+      }
+      const allowed = pathsToScan.map((target) =>
+        pathGrants.require(target, "read", "Scanning the library"),
+      );
       const currentCatalog = await libraryRepo.load();
       const { catalog: updatedCatalog, result } = await scanLibraryPaths(
-        pathsToScan,
+        allowed,
         currentCatalog,
         coversDir,
       );
@@ -208,28 +308,34 @@ export function registerIpcHandlers(
     },
   );
 
-  ipcMain.handle("library:remove-book", async (_event, bookId: string) => {
+  handle("library:remove-book", async (_event, bookId: string) => {
     const catalog = await libraryRepo.load();
     const updated = removeBookFromCatalog(catalog, bookId);
     await libraryRepo.save(updated);
     return updated;
   });
 
-  ipcMain.handle(
+  handle(
     "library:update-book",
     async (
       _event,
       bookId: string,
-      updates: Partial<LibraryBook>,
+      updates: unknown,
     ): Promise<LibraryCatalog> => {
       const catalog = await libraryRepo.load();
-      const updated = updateBookInCatalog(catalog, bookId, updates);
+      // File locations, identity and availability are owned by the main
+      // process; the renderer may only touch user-facing metadata.
+      const updated = updateBookInCatalog(
+        catalog,
+        bookId,
+        pickEditableBookFields(updates),
+      );
       await libraryRepo.save(updated);
       return updated;
     },
   );
 
-  ipcMain.handle(
+  handle(
     "library:create-collection",
     async (
       _event,
@@ -243,7 +349,7 @@ export function registerIpcHandlers(
     },
   );
 
-  ipcMain.handle(
+  handle(
     "library:delete-collection",
     async (_event, collectionId: string): Promise<LibraryCatalog> => {
       const catalog = await libraryRepo.load();
@@ -253,7 +359,7 @@ export function registerIpcHandlers(
     },
   );
 
-  ipcMain.handle(
+  handle(
     "library:add-book-to-collection",
     async (
       _event,
@@ -267,7 +373,7 @@ export function registerIpcHandlers(
     },
   );
 
-  ipcMain.handle(
+  handle(
     "library:remove-book-from-collection",
     async (
       _event,
@@ -281,14 +387,19 @@ export function registerIpcHandlers(
     },
   );
 
-  ipcMain.handle(
+  const coverReader = new PathGrantRegistry();
+  coverReader.grantDirectory(coversDir, ["read"]);
+
+  handle(
     "library:read-cover",
-    async (_event, coverPath: string): Promise<string | null> => {
+    async (_event, coverPath: unknown): Promise<string | null> => {
       try {
-        if (!coverPath || typeof coverPath !== "string") {
-          return null;
-        }
-        const resolvedPath = path.resolve(coverPath);
+        // Covers are only ever read from the app's own cover cache.
+        const resolvedPath = coverReader.require(
+          coverPath,
+          "read",
+          "Reading a cover image",
+        );
         const ext = path.extname(resolvedPath).toLowerCase();
         const validImageExts = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
         if (!validImageExts.includes(ext)) {
@@ -310,47 +421,62 @@ export function registerIpcHandlers(
     },
   );
 
-  ipcMain.handle("annotations:load", async (): Promise<AnnotationStore> => {
+  handle("annotations:load", async (): Promise<AnnotationStore> => {
     return annotationRepo.load();
   });
 
-  ipcMain.handle(
+  handle(
     "annotations:save",
     async (_event, store: AnnotationStore): Promise<void> => {
       await annotationRepo.save(store);
     },
   );
 
-  ipcMain.handle(
+  handle(
     "annotations:export",
     async (
       _event,
       publication: PublicationIdentity,
-      format: "json" | "markdown" | "html",
-      targetPath: string,
+      format: unknown,
+      targetPath: unknown,
       publicationId?: string,
     ): Promise<void> => {
+      if (format !== "json" && format !== "markdown" && format !== "html") {
+        throw new Error(
+          `Unsupported annotation export format: ${String(format)}`,
+        );
+      }
+      const allowedTarget = pathGrants.require(
+        targetPath,
+        "write",
+        "Exporting annotations",
+      );
       await annotationRepo.exportToFile(
         publication,
         format,
-        targetPath,
+        allowedTarget,
         publicationId,
       );
     },
   );
 
-  ipcMain.handle(
+  handle(
     "annotations:import",
     async (
       _event,
-      sourcePath: string,
+      sourcePath: unknown,
       targetPublicationId: string,
     ): Promise<ImportReport> => {
-      return annotationRepo.importFromFile(sourcePath, targetPublicationId);
+      const allowedSource = pathGrants.require(
+        sourcePath,
+        "read",
+        "Importing annotations",
+      );
+      return annotationRepo.importFromFile(allowedSource, targetPublicationId);
     },
   );
 
-  ipcMain.handle(
+  handle(
     "dialog:save-file",
     async (
       _event,
@@ -360,33 +486,48 @@ export function registerIpcHandlers(
         filters: Array<{ name: string; extensions: string[] }>;
       },
     ): Promise<string | null> => {
-      return showSaveFileDialog(window, options);
+      const selected = await showSaveFileDialog(window, options);
+      if (selected) pathGrants.grantFile(selected, ["write"]);
+      return selected;
     },
   );
 
-  ipcMain.handle(
-    "dialog:open-annotation-file",
-    async (): Promise<string | null> => {
-      return showOpenAnnotationFileDialog(window);
-    },
-  );
-
-  ipcMain.handle("publication:inspect", async (_event, filePath: string) => {
-    if (filePath.toLowerCase().endsWith(".pdf")) {
-      const bytes = await readFile(filePath);
-      return inspectPdfHealth(bytes, filePath);
-    }
-    return inspectEpubHealth(filePath);
+  handle("dialog:open-annotation-file", async (): Promise<string | null> => {
+    const selected = await showOpenAnnotationFileDialog(window);
+    if (selected) pathGrants.grantFile(selected, ["read"]);
+    return selected;
   });
 
-  ipcMain.handle(
+  handle("dialog:open-backup-file", async (): Promise<string | null> => {
+    const selected = await showOpenBackupFileDialog(window);
+    if (selected) pathGrants.grantFile(selected, ["read"]);
+    return selected;
+  });
+
+  handle("publication:inspect", async (_event, filePath: unknown) => {
+    const allowedPath = await requireReadablePublication(
+      filePath,
+      "Inspecting a publication",
+    );
+    if (allowedPath.toLowerCase().endsWith(".pdf")) {
+      const bytes = await readFile(allowedPath);
+      return inspectPdfHealth(bytes, allowedPath);
+    }
+    return inspectEpubHealth(allowedPath);
+  });
+
+  handle(
     "publication:repair",
     async (
       _event,
-      filePath: string,
+      filePath: unknown,
       options?: { apply?: boolean; ruleId?: string; outputDir?: string },
     ) => {
-      const report = await inspectEpubHealth(filePath);
+      const allowedPath = await requireReadablePublication(
+        filePath,
+        "Repairing a publication",
+      );
+      const report = await inspectEpubHealth(allowedPath);
       const { plan, preview } = planRepairs(report, {
         specificRuleIds: options?.ruleId ? [options.ruleId] : undefined,
       });
@@ -395,8 +536,19 @@ export function registerIpcHandlers(
         return { plan, preview };
       }
 
-      return executeRepair(filePath, plan, {
-        outputDir: options?.outputDir,
+      // Without an explicit output directory the repair engine writes a new
+      // file next to the source; any other location must be user-chosen.
+      const outputDir =
+        options.outputDir === undefined
+          ? undefined
+          : pathGrants.require(
+              options.outputDir,
+              "write",
+              "Writing a repaired publication",
+            );
+
+      return executeRepair(allowedPath, plan, {
+        outputDir,
         writeProvenance: true,
       });
     },
@@ -415,15 +567,37 @@ export function registerIpcHandlers(
   });
 
   // OPDS Handlers
-  ipcMain.handle(
+  handle(
     "opds:start",
-    async (_event, options?: { port?: number; allowLan?: boolean }) => {
+    async (_event, options?: { port?: unknown; allowLan?: unknown }) => {
+      const port = options?.port ?? 3000;
+      if (
+        typeof port !== "number" ||
+        !Number.isInteger(port) ||
+        port < 1024 ||
+        port > 65535
+      ) {
+        throw new Error("OPDS port must be an integer between 1024 and 65535.");
+      }
+      const allowLan = options?.allowLan === true;
+      if (
+        allowLan &&
+        !(await confirm(
+          "Share your library on the local network?",
+          "Any device on this network will be able to browse and download " +
+            "the books in your ReflowPress library until the server is " +
+            "stopped.",
+        ))
+      ) {
+        throw new Error("LAN sharing was not allowed.");
+      }
+
       if (activeOpdsServer) {
         await activeOpdsServer.stop();
       }
       activeOpdsServer = new OpdsServer({
-        port: options?.port ?? 3000,
-        allowLan: options?.allowLan ?? false,
+        port,
+        allowLan,
         getCatalog: () => libraryRepo.load(),
       });
       activeOpdsInfo = await activeOpdsServer.start();
@@ -431,7 +605,7 @@ export function registerIpcHandlers(
     },
   );
 
-  ipcMain.handle("opds:stop", async () => {
+  handle("opds:stop", async () => {
     if (activeOpdsServer) {
       await activeOpdsServer.stop();
       activeOpdsServer = null;
@@ -439,7 +613,7 @@ export function registerIpcHandlers(
     }
   });
 
-  ipcMain.handle("opds:status", async () => {
+  handle("opds:status", async () => {
     return {
       running: Boolean(activeOpdsServer),
       url: activeOpdsInfo?.url,
@@ -449,69 +623,33 @@ export function registerIpcHandlers(
   });
 
   // Sync Handlers
-  ipcMain.handle(
+  handle(
     "sync:folder",
-    async (_event, targetDir: string, options?: { dryRun?: boolean }) => {
+    async (_event, targetDir: unknown, options?: { dryRun?: boolean }) => {
+      const syncFolderPath = pathGrants.require(
+        targetDir,
+        "write",
+        "Syncing to a folder",
+      );
       const catalog = await libraryRepo.load();
       const localSnapshot = catalogToSnapshot(catalog);
-      const adapter = new FolderSyncAdapter({
-        syncFolderPath: path.resolve(targetDir),
-      });
+      const adapter = new FolderSyncAdapter({ syncFolderPath });
 
       await adapter.acquireLock();
       try {
         const remoteSnapshot = await adapter.readSnapshot();
-        const emptyRemoteSnapshot: SyncSnapshot = {
-          manifest: {
-            schemaVersion: 1,
-            bundleId: "remote-folder-init",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            sourceInstallationId: "remote-folder",
-            counts: {
-              books: 0,
-              annotations: 0,
-              bookmarks: 0,
-              readingPositions: 0,
-              tombstones: 0,
-              conflicts: 0,
-            },
-          },
-          books: [],
-          annotations: [],
-          bookmarks: [],
-          readingPositions: [],
-          tombstones: [],
-          conflicts: [],
-        };
-
         const mergeResult = mergeSnapshots(
           null,
           localSnapshot,
-          remoteSnapshot ?? emptyRemoteSnapshot,
+          remoteSnapshot ?? emptySnapshot("remote-folder"),
         );
 
         if (!options?.dryRun) {
           await adapter.writeSnapshot(mergeResult.snapshot);
-          const remoteBooks = mergeResult.snapshot.books.map(
-            (b: SyncRecord<SyncLibraryBookData>) => ({
-              id: b.id,
-              title: b.data.title,
-              creator: b.data.author,
-              format: b.data.format,
-              collectionIds: b.data.collections ? [...b.data.collections] : [],
-              tags: b.data.tags ? [...b.data.tags] : [],
-              dateAdded: b.updatedAt,
-              filePath: "",
-              fileSizeBytes: 0,
-              modifiedTimeMs: Date.now(),
-              availability: {
-                exists: false,
-                lastChecked: new Date().toISOString(),
-              },
-            }),
+          catalog.books = syncRecordsToCatalogBooks(
+            mergeResult.snapshot.books,
+            catalog.books,
           );
-          catalog.books = remoteBooks;
           await libraryRepo.save(catalog);
         }
 
@@ -527,76 +665,64 @@ export function registerIpcHandlers(
     },
   );
 
-  ipcMain.handle(
+  // Hosts the user has agreed to send library metadata to in this session.
+  const approvedWebdavHosts = new Set<string>();
+
+  handle(
     "sync:webdav",
     async (
       _event,
-      url: string,
+      url: unknown,
       username?: string,
       password?: string,
       options?: { dryRun?: boolean },
     ) => {
+      if (typeof url !== "string") {
+        throw new Error("WebDAV URL must be a string.");
+      }
+      let remote: URL;
+      try {
+        remote = new URL(url);
+      } catch {
+        throw new Error("WebDAV URL is not a valid URL.");
+      }
+      if (remote.protocol !== "https:") {
+        throw new Error("WebDAV sync requires an https:// URL.");
+      }
+      if (
+        !approvedWebdavHosts.has(remote.host) &&
+        !(await confirm(
+          `Sync your library with ${remote.host}?`,
+          "ReflowPress will upload your library catalog (titles, authors, " +
+            `tags and collections) to ${remote.origin}.`,
+        ))
+      ) {
+        throw new Error("WebDAV sync was not allowed.");
+      }
+      approvedWebdavHosts.add(remote.host);
+
       const catalog = await libraryRepo.load();
       const localSnapshot = catalogToSnapshot(catalog);
       const adapter = new WebdavSyncAdapter({
-        remoteUrl: url,
+        remoteUrl: remote.toString(),
         username,
         password,
         allowInsecure: false,
       });
 
       const remoteSnapshot = await adapter.readSnapshot();
-      const emptyRemoteSnapshot: SyncSnapshot = {
-        manifest: {
-          schemaVersion: 1,
-          bundleId: "remote-webdav-init",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          sourceInstallationId: "remote-webdav",
-          counts: {
-            books: 0,
-            annotations: 0,
-            bookmarks: 0,
-            readingPositions: 0,
-            tombstones: 0,
-            conflicts: 0,
-          },
-        },
-        books: [],
-        annotations: [],
-        bookmarks: [],
-        readingPositions: [],
-        tombstones: [],
-        conflicts: [],
-      };
-
       const mergeResult = mergeSnapshots(
         null,
         localSnapshot,
-        remoteSnapshot ?? emptyRemoteSnapshot,
+        remoteSnapshot ?? emptySnapshot("remote-webdav"),
       );
 
       if (!options?.dryRun) {
         await adapter.writeSnapshot(mergeResult.snapshot);
-        const remoteBooks = mergeResult.snapshot.books.map(
-          (b: SyncRecord<SyncLibraryBookData>) => ({
-            id: b.id,
-            title: b.data.title,
-            creator: b.data.author,
-            format: b.data.format,
-            collectionIds: b.data.collections ? [...b.data.collections] : [],
-            tags: b.data.tags ? [...b.data.tags] : [],
-            dateAdded: b.updatedAt,
-            filePath: "",
-            fileSizeBytes: 0,
-            modifiedTimeMs: Date.now(),
-            availability: {
-              exists: false,
-              lastChecked: new Date().toISOString(),
-            },
-          }),
+        catalog.books = syncRecordsToCatalogBooks(
+          mergeResult.snapshot.books,
+          catalog.books,
         );
-        catalog.books = remoteBooks;
         await libraryRepo.save(catalog);
       }
 
@@ -610,37 +736,59 @@ export function registerIpcHandlers(
   );
 
   // Backup & Restore Handlers
-  ipcMain.handle("backup:create", async (_event, outputPath: string) => {
+  handle("backup:create", async (_event, outputPath: unknown) => {
+    const allowedOutput = pathGrants.require(
+      outputPath,
+      "write",
+      "Creating a backup",
+    );
     const catalog = await libraryRepo.load();
     const snapshot = catalogToSnapshot(catalog);
     const bundleFiles = serializeSyncBundle(snapshot);
-    await writeFile(outputPath, JSON.stringify(bundleFiles, null, 2), "utf-8");
+    await writeFile(
+      allowedOutput,
+      JSON.stringify(bundleFiles, null, 2),
+      "utf-8",
+    );
     return {
       success: true,
-      outputPath,
+      outputPath: allowedOutput,
       count: snapshot.books.length,
     };
   });
 
-  ipcMain.handle("restore:preview", async (_event, bundlePath: string) => {
-    const raw = await readFile(path.resolve(bundlePath), "utf-8");
+  async function readBackupBundle(bundlePath: unknown): Promise<SyncSnapshot> {
+    const allowedBundle = pathGrants.require(
+      bundlePath,
+      "read",
+      "Restoring a backup",
+    );
+    const { size } = await stat(allowedBundle);
+    if (size > MAX_BACKUP_BUNDLE_BYTES) {
+      throw new Error(
+        `Backup bundle is too large (${size} bytes; limit ${MAX_BACKUP_BUNDLE_BYTES}).`,
+      );
+    }
+    const raw = await readFile(allowedBundle, "utf-8");
     const bundleMap = JSON.parse(raw) as Record<string, string>;
-    const remoteSnapshot = deserializeSyncBundle(bundleMap);
+    return deserializeSyncBundle(bundleMap);
+  }
+
+  handle("restore:preview", async (_event, bundlePath: unknown) => {
+    const remoteSnapshot = await readBackupBundle(bundlePath);
     const catalog = await libraryRepo.load();
     const localSnapshot = catalogToSnapshot(catalog);
     return createRestorePlan(remoteSnapshot, localSnapshot);
   });
 
-  ipcMain.handle(
+  handle(
     "restore:apply",
     async (
       _event,
-      bundlePath: string,
+      bundlePath: unknown,
       policy?: "keep-local" | "keep-remote" | "keep-both",
     ) => {
-      const raw = await readFile(path.resolve(bundlePath), "utf-8");
-      const bundleMap = JSON.parse(raw) as Record<string, string>;
-      const remoteSnapshot = deserializeSyncBundle(bundleMap);
+      const remoteSnapshot = await readBackupBundle(bundlePath);
       const catalog = await libraryRepo.load();
       const localSnapshot = catalogToSnapshot(catalog);
 
@@ -650,23 +798,9 @@ export function registerIpcHandlers(
         { conflictPolicy: policy ?? "keep-local" },
       );
 
-      catalog.books = restoredSnapshot.books.map(
-        (b: SyncRecord<SyncLibraryBookData>) => ({
-          id: b.id,
-          title: b.data.title,
-          creator: b.data.author,
-          format: b.data.format,
-          collectionIds: b.data.collections ? [...b.data.collections] : [],
-          tags: b.data.tags ? [...b.data.tags] : [],
-          dateAdded: b.updatedAt,
-          filePath: "",
-          fileSizeBytes: 0,
-          modifiedTimeMs: Date.now(),
-          availability: {
-            exists: false,
-            lastChecked: new Date().toISOString(),
-          },
-        }),
+      catalog.books = syncRecordsToCatalogBooks(
+        restoredSnapshot.books,
+        catalog.books,
       );
       catalog.updatedAt = new Date().toISOString();
       await libraryRepo.save(catalog);
@@ -679,26 +813,38 @@ export function registerIpcHandlers(
   );
 
   // Device Handlers
-  ipcMain.handle("device:discover", async (_event, targetDir?: string) => {
-    const mountDir = path.resolve(targetDir ?? process.cwd());
+  handle("device:discover", async (_event, targetDir: unknown) => {
+    const mountDir = pathGrants.require(
+      targetDir,
+      "read",
+      "Detecting a device",
+    );
     const adapter = new FilesystemDeviceAdapter(mountDir);
     return adapter.discover();
   });
 
-  ipcMain.handle(
+  handle(
     "device:transfer",
-    async (_event, targetMount: string, bookIds: string[]) => {
+    async (_event, targetMount: unknown, bookIds: unknown) => {
+      const mountDir = pathGrants.require(
+        targetMount,
+        "write",
+        "Transferring to a device",
+      );
+      const requestedIds = Array.isArray(bookIds)
+        ? bookIds.filter((id): id is string => typeof id === "string")
+        : [];
       const catalog = await libraryRepo.load();
       const booksToTransfer = catalog.books.filter((b) =>
-        bookIds.includes(b.id),
+        requestedIds.includes(b.id),
       );
 
-      const adapter = new FilesystemDeviceAdapter(path.resolve(targetMount));
+      const adapter = new FilesystemDeviceAdapter(mountDir);
       const devices = await adapter.discover();
       const dev = devices[0];
       if (!dev) {
         throw new Error(
-          `No valid target e-reader device found at '${targetMount}'`,
+          `No valid target e-reader device found at '${mountDir}'`,
         );
       }
 
@@ -722,6 +868,33 @@ export function registerIpcHandlers(
       return adapter.executeTransfer(plan);
     },
   );
+}
+
+function emptySnapshot(installationId: string): SyncSnapshot {
+  const now = new Date().toISOString();
+  return {
+    manifest: {
+      schemaVersion: 1,
+      bundleId: `${installationId}-init`,
+      createdAt: now,
+      updatedAt: now,
+      sourceInstallationId: installationId,
+      counts: {
+        books: 0,
+        annotations: 0,
+        bookmarks: 0,
+        readingPositions: 0,
+        tombstones: 0,
+        conflicts: 0,
+      },
+    },
+    books: [],
+    annotations: [],
+    bookmarks: [],
+    readingPositions: [],
+    tombstones: [],
+    conflicts: [],
+  };
 }
 
 function catalogToSnapshot(
