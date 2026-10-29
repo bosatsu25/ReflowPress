@@ -5,3 +5,8 @@ allowBuilds:
   electron: true
   electron-winstaller: true
   esbuild: true
+# Build-time dependencies of electron-builder that its own ranges allow but
+# the lockfile had not picked up; both fix published advisories.
+overrides:
+  "fast-uri@3": ^3.1.9
+  "undici@6": ^6.29.1
