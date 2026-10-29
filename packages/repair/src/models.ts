@@ -15,6 +15,17 @@ export interface RepairAction {
   readonly targetFile: string;
   readonly beforeSnippet?: string | undefined;
   readonly afterSnippet?: string | undefined;
+  /**
+   * For "manifest-mediatype" actions: the manifest item whose media-type is
+   * corrected. Only an `<item>` with this id and declared media-type is changed.
+   */
+  readonly manifestItem?: RepairManifestItemTarget | undefined;
+}
+
+export interface RepairManifestItemTarget {
+  readonly id: string;
+  readonly declaredMediaType: string;
+  readonly expectedMediaType: string;
 }
 
 export interface RepairPlan {

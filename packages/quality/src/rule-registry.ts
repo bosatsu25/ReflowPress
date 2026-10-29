@@ -65,6 +65,18 @@ export const RULE_REGISTRY: ReadonlyMap<string, RuleDefinition> = new Map<
     },
   ],
   [
+    "EPUB-CONTAINER-006",
+    {
+      id: "EPUB-CONTAINER-006",
+      title: "Unreadable, corrupt, or ambiguous archive entry",
+      category: "container",
+      defaultSeverity: "fatal",
+      defaultRepairability: "none",
+      description:
+        "The ZIP structure or an archive entry cannot be decoded safely: it is encrypted, uses an unsupported compression method, fails its CRC or size check, or duplicates another entry name. ReflowPress refuses to load such archives.",
+    },
+  ],
+  [
     "EPUB-PACKAGE-001",
     {
       id: "EPUB-PACKAGE-001",
@@ -304,6 +316,18 @@ export const RULE_REGISTRY: ReadonlyMap<string, RuleDefinition> = new Map<
     },
   ],
   [
+    "EPUB-SEC-003",
+    {
+      id: "EPUB-SEC-003",
+      title: "Archive exceeds inspection resource limits",
+      category: "security",
+      defaultSeverity: "fatal",
+      defaultRepairability: "none",
+      description:
+        "The EPUB archive exceeds the resource limits shared with the EPUB loader (archive size, entry count, or per-entry or total decompressed bytes), which indicates a decompression bomb or an unsupported publication size. The offending data is not read, so the inspection may be incomplete.",
+    },
+  ],
+  [
     "PDF-STRUCT-001",
     {
       id: "PDF-STRUCT-001",
@@ -324,6 +348,30 @@ export const RULE_REGISTRY: ReadonlyMap<string, RuleDefinition> = new Map<
       defaultSeverity: "error",
       defaultRepairability: "none",
       description: "The PDF document contains zero renderable pages.",
+    },
+  ],
+  [
+    "PDF-STRUCT-003",
+    {
+      id: "PDF-STRUCT-003",
+      title: "PDF exceeds the maximum inspectable size",
+      category: "pdf-structure",
+      defaultSeverity: "fatal",
+      defaultRepairability: "none",
+      description:
+        "The PDF file is larger than the inspection size limit, so it was not parsed.",
+    },
+  ],
+  [
+    "PDF-STRUCT-004",
+    {
+      id: "PDF-STRUCT-004",
+      title: "PDF inspection truncated at a resource limit",
+      category: "pdf-structure",
+      defaultSeverity: "warning",
+      defaultRepairability: "none",
+      description:
+        "The PDF declares more pages or objects, or larger compressed content streams, than the inspector processes. Only the content within the limits was inspected.",
     },
   ],
   [

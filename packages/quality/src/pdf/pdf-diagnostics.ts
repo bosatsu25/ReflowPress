@@ -22,18 +22,57 @@ export interface PdfPageInspection {
   readonly fonts: readonly string[];
 }
 
+/**
+ * Resource limits for {@link inspectPdfHealth}. The inspector runs in the
+ * desktop main process on attacker-supplied files, so every quantity that can
+ * grow with the input is bounded.
+ */
+export interface PdfInspectionLimits {
+  /** Largest input that is parsed; larger inputs yield PDF-STRUCT-003. */
+  readonly maxInputBytes: number;
+  /** Maximum number of indirect objects indexed. */
+  readonly maxObjects: number;
+  /** Maximum number of pages inspected; also clamps the /Count fallback. */
+  readonly maxInspectedPages: number;
+  /** Maximum decompressed size of a single FlateDecode content stream. */
+  readonly maxInflatedStreamBytes: number;
+  /** Maximum decompressed bytes across all content streams. */
+  readonly maxTotalInflatedBytes: number;
+}
+
+export const DEFAULT_PDF_INSPECTION_LIMITS: PdfInspectionLimits = {
+  // The whole file is decoded into one string, so the cap must stay well below
+  // V8's maximum string length (2^29 - 24 characters, just under 512 MiB).
+  maxInputBytes: 256 * 1024 * 1024,
+  maxObjects: 1_000_000,
+  maxInspectedPages: 10_000,
+  maxInflatedStreamBytes: 16 * 1024 * 1024,
+  maxTotalInflatedBytes: 256 * 1024 * 1024,
+};
+
+export interface PdfHealthInspectionOptions {
+  readonly toolVersion?: string | undefined;
+  /** Overrides for {@link DEFAULT_PDF_INSPECTION_LIMITS}. */
+  readonly limits?: Partial<PdfInspectionLimits> | undefined;
+}
+
+const latin1Decoder = new TextDecoder("latin1");
+
 export function inspectPdfHealth(
   pdfBytes: Uint8Array,
   sourcePath = "document.pdf",
-  options?: { readonly toolVersion?: string | undefined } | undefined,
+  options?: PdfHealthInspectionOptions | undefined,
 ): HealthReport {
   const startTime = Date.now();
   const findings: QualityFinding[] = [];
   const rulesExecuted = new Set<string>();
   const rulesSkipped: string[] = [];
+  const limits = resolvePdfLimits(options?.limits);
 
   rulesExecuted.add("PDF-STRUCT-001");
   rulesExecuted.add("PDF-STRUCT-002");
+  rulesExecuted.add("PDF-STRUCT-003");
+  rulesExecuted.add("PDF-STRUCT-004");
   rulesExecuted.add("PDF-ENCRYPT-001");
   rulesExecuted.add("PDF-TEXT-001");
   rulesExecuted.add("PDF-TEXT-002");
@@ -41,6 +80,16 @@ export function inspectPdfHealth(
   rulesExecuted.add("PDF-GEOM-002");
   rulesExecuted.add("PDF-IMAGE-001");
   rulesExecuted.add("PDF-FONT-001");
+
+  const finish = (): HealthReport =>
+    finalizePdfReport(
+      sourcePath,
+      findings,
+      startTime,
+      rulesExecuted,
+      rulesSkipped,
+      options?.toolVersion,
+    );
 
   if (!pdfBytes || pdfBytes.length === 0) {
     findings.push({
@@ -51,19 +100,28 @@ export function inspectPdfHealth(
       location: { path: sourcePath },
       repairability: "none",
     });
-    return finalizePdfReport(
-      sourcePath,
-      findings,
-      startTime,
-      rulesExecuted,
-      rulesSkipped,
-      options?.toolVersion,
-    );
+    return finish();
+  }
+
+  if (pdfBytes.length > limits.maxInputBytes) {
+    findings.push({
+      ruleId: "PDF-STRUCT-003",
+      severity: "fatal",
+      category: "pdf-structure",
+      message: `PDF is ${pdfBytes.length} bytes, which exceeds the ${limits.maxInputBytes}-byte inspection limit; it was not parsed.`,
+      location: { path: sourcePath },
+      evidence: [
+        { key: "byteLength", value: pdfBytes.length },
+        { key: "limitBytes", value: limits.maxInputBytes },
+      ],
+      repairability: "none",
+    });
+    return finish();
   }
 
   // Header check (%PDF-1.x)
   const headerSlice = pdfBytes.subarray(0, Math.min(pdfBytes.length, 1024));
-  const headerText = new TextDecoder("latin1").decode(headerSlice);
+  const headerText = latin1Decoder.decode(headerSlice);
   const pdfMatch = headerText.match(/%PDF-(\d+\.\d+)/);
 
   if (!pdfMatch) {
@@ -76,23 +134,26 @@ export function inspectPdfHealth(
       location: { path: sourcePath },
       repairability: "none",
     });
-    return finalizePdfReport(
-      sourcePath,
-      findings,
-      startTime,
-      rulesExecuted,
-      rulesSkipped,
-      options?.toolVersion,
-    );
+    return finish();
   }
 
-  const rawPdf = new TextDecoder("latin1").decode(pdfBytes);
+  let rawPdf: string;
+  try {
+    rawPdf = latin1Decoder.decode(pdfBytes);
+  } catch (err) {
+    findings.push({
+      ruleId: "PDF-STRUCT-001",
+      severity: "fatal",
+      category: "pdf-structure",
+      message: `PDF bytes could not be decoded for inspection: ${err instanceof Error ? err.message : String(err)}`,
+      location: { path: sourcePath },
+      repairability: "none",
+    });
+    return finish();
+  }
 
   // Check encryption
-  if (
-    /\/Encrypt\s+\d+\s+\d+\s+R/.test(rawPdf) ||
-    /\/Encrypt\s*<<.*>>/s.test(rawPdf)
-  ) {
+  if (hasEncryptDictionary(rawPdf)) {
     findings.push({
       ruleId: "PDF-ENCRYPT-001",
       severity: "error",
@@ -104,7 +165,23 @@ export function inspectPdfHealth(
   }
 
   // Parse pages
-  const pageInfos = extractPdfPages(pdfBytes, rawPdf);
+  const { pages: pageInfos, truncations } = extractPdfPages(
+    pdfBytes,
+    rawPdf,
+    limits,
+  );
+
+  for (const truncation of truncations) {
+    findings.push({
+      ruleId: "PDF-STRUCT-004",
+      severity: "warning",
+      category: "pdf-structure",
+      message: truncation.message,
+      location: { path: sourcePath },
+      evidence: truncation.evidence,
+      repairability: "none",
+    });
+  }
 
   if (pageInfos.length === 0) {
     findings.push({
@@ -115,14 +192,7 @@ export function inspectPdfHealth(
       location: { path: sourcePath },
       repairability: "none",
     });
-    return finalizePdfReport(
-      sourcePath,
-      findings,
-      startTime,
-      rulesExecuted,
-      rulesSkipped,
-      options?.toolVersion,
-    );
+    return finish();
   }
 
   let totalDocText = 0;
@@ -219,109 +289,202 @@ export function inspectPdfHealth(
     repairability: "none",
   });
 
-  return finalizePdfReport(
-    sourcePath,
-    findings,
-    startTime,
-    rulesExecuted,
-    rulesSkipped,
-    options?.toolVersion,
+  return finish();
+}
+
+function resolvePdfLimits(
+  overrides?: Partial<PdfInspectionLimits> | undefined,
+): PdfInspectionLimits {
+  const resolved: { -readonly [K in keyof PdfInspectionLimits]: number } = {
+    ...DEFAULT_PDF_INSPECTION_LIMITS,
+  };
+  if (overrides) {
+    for (const key of Object.keys(resolved) as (keyof PdfInspectionLimits)[]) {
+      const value = overrides[key];
+      if (
+        typeof value === "number" &&
+        Number.isSafeInteger(value) &&
+        value > 0
+      ) {
+        resolved[key] = value;
+      }
+    }
+  }
+  return resolved;
+}
+
+/**
+ * Detects `/Encrypt N M R` or an inline `/Encrypt << ... >>` dictionary.
+ * Equivalent to the former `/\/Encrypt\s*<<.*>>/s` test without its quadratic
+ * backtracking: only the first `/Encrypt <<` can matter, because any later one
+ * has a `>>` after it only if the first one does.
+ */
+function hasEncryptDictionary(rawPdf: string): boolean {
+  if (/\/Encrypt\s+\d+\s+\d+\s+R/.test(rawPdf)) return true;
+  const dictionary = /\/Encrypt\s*<</.exec(rawPdf);
+  return (
+    dictionary !== null &&
+    rawPdf.indexOf(">>", dictionary.index + dictionary[0].length) !== -1
   );
+}
+
+interface PdfObjectSpan {
+  /** Offset of the object number. */
+  readonly start: number;
+  /** Offset just after the `obj` keyword. */
+  readonly bodyStart: number;
+  /** Offset of the terminating `endobj` keyword. */
+  readonly bodyEnd: number;
+  /** Offset just after `endobj`. */
+  readonly end: number;
+}
+
+interface InspectionTruncation {
+  readonly message: string;
+  readonly evidence: QualityFinding["evidence"];
+}
+
+interface InflateBudget {
+  remaining: number;
+  limitReached: boolean;
+}
+
+interface StreamInspection {
+  readonly textLength: number;
+  readonly hasImages: boolean;
 }
 
 function extractPdfPages(
   pdfBytes: Uint8Array,
   rawPdf: string,
-): PdfPageInspection[] {
+  limits: PdfInspectionLimits,
+): { pages: PdfPageInspection[]; truncations: InspectionTruncation[] } {
   const pages: PdfPageInspection[] = [];
+  const truncations: InspectionTruncation[] = [];
 
-  // Match all object blocks: "X Y obj ... endobj"
-  const objRegex = /(\d+)\s+(\d+)\s+obj([\s\S]*?)endobj/g;
-  const objects = new Map<
-    number,
-    { body: string; fullMatch: string; startOffset: number }
-  >();
-  let match: RegExpExecArray | null;
-
-  while ((match = objRegex.exec(rawPdf)) !== null) {
-    const objNum = parseInt(match[1]!, 10);
-    const body = match[3]!;
-    objects.set(objNum, {
-      body,
-      fullMatch: match[0],
-      startOffset: match.index,
+  // Index all object blocks "X Y obj ... endobj" (later definitions replace
+  // earlier ones, as with incremental updates).
+  const { objects, truncated: objectsTruncated } = indexPdfObjects(
+    rawPdf,
+    limits.maxObjects,
+  );
+  if (objectsTruncated) {
+    truncations.push({
+      message: `PDF contains more than ${limits.maxObjects} indirect objects; only the first ${limits.maxObjects} were indexed.`,
+      evidence: [{ key: "maxObjects", value: limits.maxObjects }],
     });
   }
 
+  const budget: InflateBudget = {
+    remaining: limits.maxTotalInflatedBytes,
+    limitReached: false,
+  };
+  // Content streams shared by several pages are decoded and scanned once.
+  const contentCache = new Map<number, StreamInspection>();
+
   // Find page objects: contains "/Type\s*\/Page\b"
-  let pageNum = 1;
+  const pageTypeRegex = /\/Type\s*\/Page\b(?!\s*s)/;
+  let pageObjectCount = 0;
   for (const [, obj] of objects) {
-    if (/\/Type\s*\/Page\b(?!\s*s)/.test(obj.body)) {
-      // Extract MediaBox
-      let width = 595.28; // Default A4
-      let height = 841.89;
-      const mediaBoxMatch = obj.body.match(
-        /\/MediaBox\s*\[\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*\]/,
-      );
-      if (mediaBoxMatch) {
-        const x1 = parseFloat(mediaBoxMatch[1]!);
-        const y1 = parseFloat(mediaBoxMatch[2]!);
-        const x2 = parseFloat(mediaBoxMatch[3]!);
-        const y2 = parseFloat(mediaBoxMatch[4]!);
-        width = Math.abs(x2 - x1);
-        height = Math.abs(y2 - y1);
-      }
+    const body = rawPdf.slice(obj.bodyStart, obj.bodyEnd);
+    if (!pageTypeRegex.test(body)) continue;
 
-      // Check contents stream
-      let textLength = 0;
-      let hasImages = false;
+    pageObjectCount += 1;
+    if (pages.length >= limits.maxInspectedPages) continue;
 
-      // Direct stream or reference to stream object
-      const contentsRefMatch = obj.body.match(/\/Contents\s+(\d+)\s+(\d+)\s+R/);
-      if (contentsRefMatch) {
-        const streamObjNum = parseInt(contentsRefMatch[1]!, 10);
+    // Extract MediaBox
+    let width = 595.28; // Default A4
+    let height = 841.89;
+    const mediaBoxMatch = body.match(
+      /\/MediaBox\s*\[\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*\]/,
+    );
+    if (mediaBoxMatch) {
+      const x1 = parseFloat(mediaBoxMatch[1]!);
+      const y1 = parseFloat(mediaBoxMatch[2]!);
+      const x2 = parseFloat(mediaBoxMatch[3]!);
+      const y2 = parseFloat(mediaBoxMatch[4]!);
+      width = Math.abs(x2 - x1);
+      height = Math.abs(y2 - y1);
+    }
+
+    // Check contents stream
+    let textLength = 0;
+    let hasImages = false;
+
+    // Direct stream or reference to stream object
+    const contentsRefMatch = body.match(/\/Contents\s+(\d+)\s+(\d+)\s+R/);
+    if (contentsRefMatch) {
+      const streamObjNum = parseInt(contentsRefMatch[1]!, 10);
+      let inspected = contentCache.get(streamObjNum);
+      if (!inspected) {
         const streamObj = objects.get(streamObjNum);
         if (streamObj) {
-          const inspected = inspectStreamTextAndImages(
+          inspected = inspectStreamTextAndImages(
             pdfBytes,
-            streamObj.startOffset,
-            streamObj.fullMatch,
+            rawPdf,
+            streamObj,
+            limits,
+            budget,
           );
-          textLength = inspected.textLength;
-          hasImages = inspected.hasImages;
+          contentCache.set(streamObjNum, inspected);
         }
-      } else if (obj.body.includes("stream")) {
-        const inspected = inspectStreamTextAndImages(
-          pdfBytes,
-          obj.startOffset,
-          obj.fullMatch,
-        );
+      }
+      if (inspected) {
         textLength = inspected.textLength;
         hasImages = inspected.hasImages;
       }
-
-      // Check if page object itself declares image XObjects in Resources
-      if (!hasImages && /\/Subtype\s*\/Image\b/.test(obj.body)) {
-        hasImages = true;
-      }
-
-      pages.push({
-        pageNumber: pageNum,
-        width,
-        height,
-        textLength,
-        hasImages,
-        fonts: [],
-      });
-      pageNum += 1;
+    } else if (body.includes("stream")) {
+      const inspected = inspectStreamTextAndImages(
+        pdfBytes,
+        rawPdf,
+        obj,
+        limits,
+        budget,
+      );
+      textLength = inspected.textLength;
+      hasImages = inspected.hasImages;
     }
+
+    // Check if page object itself declares image XObjects in Resources
+    if (!hasImages && /\/Subtype\s*\/Image\b/.test(body)) {
+      hasImages = true;
+    }
+
+    pages.push({
+      pageNumber: pages.length + 1,
+      width,
+      height,
+      textLength,
+      hasImages,
+      fonts: [],
+    });
+  }
+
+  if (pageObjectCount > pages.length) {
+    truncations.push({
+      message: `PDF declares ${pageObjectCount} page objects; only the first ${pages.length} were inspected.`,
+      evidence: [
+        { key: "pageObjects", value: pageObjectCount },
+        { key: "inspectedPages", value: pages.length },
+      ],
+    });
   }
 
   // If no /Type /Page found, fallback to checking /Count
   if (pages.length === 0) {
-    const countMatch = rawPdf.match(/\/Type\s*\/Pages[\s\S]*?\/Count\s+(\d+)/);
-    if (countMatch && countMatch[1]) {
-      const estimatedCount = parseInt(countMatch[1], 10);
+    const declaredCount = findPageTreeCount(rawPdf);
+    if (declaredCount !== undefined) {
+      const declared = parseInt(declaredCount, 10);
+      const estimatedCount = Math.min(declared, limits.maxInspectedPages);
+      if (declared > estimatedCount) {
+        truncations.push({
+          message: `PDF page tree declares /Count ${truncateDigits(declaredCount)}; only ${estimatedCount} pages were assumed for inspection.`,
+          evidence: [
+            { key: "declaredCount", value: truncateDigits(declaredCount) },
+            { key: "inspectedPages", value: estimatedCount },
+          ],
+        });
+      }
       for (let i = 1; i <= estimatedCount; i += 1) {
         pages.push({
           pageNumber: i,
@@ -335,14 +498,110 @@ function extractPdfPages(
     }
   }
 
-  return pages;
+  if (budget.limitReached) {
+    truncations.push({
+      message: `Decompressing content streams exceeded the inspection limits (${limits.maxInflatedStreamBytes} bytes per stream, ${limits.maxTotalInflatedBytes} bytes in total); the affected streams were scanned without decompression.`,
+      evidence: [
+        { key: "maxInflatedStreamBytes", value: limits.maxInflatedStreamBytes },
+        { key: "maxTotalInflatedBytes", value: limits.maxTotalInflatedBytes },
+      ],
+    });
+  }
+
+  return { pages, truncations };
+}
+
+/**
+ * Indexes `X Y obj ... endobj` blocks in linear time. Equivalent to iterating
+ * `/(\d+)\s+(\d+)\s+obj([\s\S]*?)endobj/g`, which is quadratic on long digit
+ * runs and on unterminated objects.
+ */
+function indexPdfObjects(
+  rawPdf: string,
+  maxObjects: number,
+): { objects: Map<number, PdfObjectSpan>; truncated: boolean } {
+  const objects = new Map<number, PdfObjectSpan>();
+  let cursor = 0;
+
+  for (;;) {
+    const keyword = rawPdf.indexOf("obj", cursor);
+    if (keyword === -1) break;
+
+    const header = parseObjectHeader(rawPdf, keyword, cursor);
+    if (!header) {
+      cursor = keyword + 3;
+      continue;
+    }
+
+    const endKeyword = rawPdf.indexOf("endobj", keyword + 3);
+    // Without a terminator no later object can be terminated either.
+    if (endKeyword === -1) break;
+
+    if (objects.size >= maxObjects && !objects.has(header.objNum)) {
+      return { objects, truncated: true };
+    }
+    objects.set(header.objNum, {
+      start: header.start,
+      bodyStart: keyword + 3,
+      bodyEnd: endKeyword,
+      end: endKeyword + 6,
+    });
+    cursor = endKeyword + 6;
+  }
+
+  return { objects, truncated: false };
+}
+
+/**
+ * Parses `\d+\s+\d+\s+` backwards from an `obj` keyword without crossing
+ * `floor` (the end of the previous match). Each character is visited at most
+ * once per keyword, and the scanned runs of different keywords are disjoint.
+ */
+function parseObjectHeader(
+  rawPdf: string,
+  keyword: number,
+  floor: number,
+): { start: number; objNum: number } | undefined {
+  let i = keyword - 1;
+  if (i < floor || !isJsWhitespace(rawPdf.charCodeAt(i))) return undefined;
+  while (i >= floor && isJsWhitespace(rawPdf.charCodeAt(i))) i -= 1;
+
+  const generationEnd = i;
+  while (i >= floor && isAsciiDigit(rawPdf.charCodeAt(i))) i -= 1;
+  if (i === generationEnd) return undefined;
+
+  if (i < floor || !isJsWhitespace(rawPdf.charCodeAt(i))) return undefined;
+  while (i >= floor && isJsWhitespace(rawPdf.charCodeAt(i))) i -= 1;
+
+  const numberEnd = i;
+  while (i >= floor && isAsciiDigit(rawPdf.charCodeAt(i))) i -= 1;
+  if (i === numberEnd) return undefined;
+
+  const start = i + 1;
+  return { start, objNum: parseInt(rawPdf.slice(start, numberEnd + 1), 10) };
+}
+
+/**
+ * Returns the digits of the first `/Count N` following the first
+ * `/Type /Pages`, like `/\/Type\s*\/Pages[\s\S]*?\/Count\s+(\d+)/` but in
+ * linear time.
+ */
+function findPageTreeCount(rawPdf: string): string | undefined {
+  const pagesNode = /\/Type\s*\/Pages/.exec(rawPdf);
+  if (!pagesNode) return undefined;
+  const countRegex = /\/Count\s+(\d+)/g;
+  countRegex.lastIndex = pagesNode.index + pagesNode[0].length;
+  return countRegex.exec(rawPdf)?.[1];
 }
 
 function inspectStreamTextAndImages(
   pdfBytes: Uint8Array,
-  objStartOffset: number,
-  objFullMatch: string,
-): { textLength: number; hasImages: boolean } {
+  rawPdf: string,
+  obj: PdfObjectSpan,
+  limits: PdfInspectionLimits,
+  budget: InflateBudget,
+): StreamInspection {
+  const objFullMatch = rawPdf.slice(obj.start, obj.end);
   const streamHeaderMatch = objFullMatch.match(/stream\r?\n/);
   const endStreamMatch = objFullMatch.match(/\r?\nendstream/);
 
@@ -356,59 +615,209 @@ function inspectStreamTextAndImages(
   }
 
   const streamStart =
-    objStartOffset + streamHeaderMatch.index + streamHeaderMatch[0].length;
-  const streamEnd = objStartOffset + endStreamMatch.index;
+    obj.start + streamHeaderMatch.index + streamHeaderMatch[0].length;
+  const streamEnd = obj.start + endStreamMatch.index;
   const rawStreamBytes = pdfBytes.subarray(streamStart, streamEnd);
 
-  let streamContent: string;
-  if (
+  const isFlate =
     objFullMatch.includes("/Filter /FlateDecode") ||
-    objFullMatch.includes("/Filter/FlateDecode")
-  ) {
-    try {
-      const decompressed = inflateSync(rawStreamBytes);
-      streamContent = new TextDecoder("latin1").decode(decompressed);
-    } catch {
-      // Fallback: try raw decode
-      streamContent = new TextDecoder("latin1").decode(rawStreamBytes);
-    }
-  } else {
-    streamContent = new TextDecoder("latin1").decode(rawStreamBytes);
-  }
+    objFullMatch.includes("/Filter/FlateDecode");
+  const streamContent = decodeStreamContent(
+    rawStreamBytes,
+    isFlate,
+    limits,
+    budget,
+  );
 
-  // Check for images
-  const hasImages =
-    /\/Do\b/.test(streamContent) ||
-    /\bBI\b[\s\S]*?\bID\b[\s\S]*?\bEI\b/.test(streamContent);
+  return analyzeContentStream(streamContent);
+}
 
-  // Extract text within BT ... ET blocks
-  let textLength = 0;
-  const btRegex = /\bBT\b([\s\S]*?)\bET\b/g;
-  let btMatch: RegExpExecArray | null;
-
-  while ((btMatch = btRegex.exec(streamContent)) !== null) {
-    const textBlock = btMatch[1]!;
-    // Match strings in ( ... ) Tj or [ ... ] TJ
-    const strRegex = /\((.*?)\)\s*Tj/g;
-    let sMatch: RegExpExecArray | null;
-    while ((sMatch = strRegex.exec(textBlock)) !== null) {
-      textLength += sMatch[1]?.length ?? 0;
-    }
-
-    const tjArrayRegex = /\[(.*?)\]\s*TJ/g;
-    let aMatch: RegExpExecArray | null;
-    while ((aMatch = tjArrayRegex.exec(textBlock)) !== null) {
-      const insideArray = aMatch[1]!;
-      const innerStrings = insideArray.match(/\((.*?)\)/g);
-      if (innerStrings) {
-        for (const is of innerStrings) {
-          textLength += Math.max(0, is.length - 2);
+function decodeStreamContent(
+  rawStreamBytes: Uint8Array,
+  isFlate: boolean,
+  limits: PdfInspectionLimits,
+  budget: InflateBudget,
+): string {
+  if (isFlate) {
+    const maxOutputLength = Math.min(
+      limits.maxInflatedStreamBytes,
+      budget.remaining,
+    );
+    if (maxOutputLength <= 0) {
+      budget.limitReached = true;
+    } else {
+      try {
+        const decompressed = inflateSync(rawStreamBytes, { maxOutputLength });
+        budget.remaining -= decompressed.length;
+        return latin1Decoder.decode(decompressed);
+      } catch (err) {
+        if (
+          err instanceof RangeError &&
+          (err as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE"
+        ) {
+          // The work done up to the cap still counts against the budget.
+          budget.remaining -= maxOutputLength;
+          budget.limitReached = true;
         }
+        // Fall back to scanning the raw bytes, as for corrupt streams.
       }
     }
   }
+  return latin1Decoder.decode(rawStreamBytes);
+}
+
+/**
+ * Measures shown text and detects images in a content stream. Every scan is
+ * linear: it reproduces the former lazy regular expressions
+ * (`\bBT\b([\s\S]*?)\bET\b`, `\((.*?)\)\s*Tj`, `\[(.*?)\]\s*TJ`, `\((.*?)\)`
+ * and `\bBI\b[\s\S]*?\bID\b[\s\S]*?\bEI\b`) with forward-only searches.
+ */
+function analyzeContentStream(content: string): StreamInspection {
+  const hasImages = /\/Do\b/.test(content) || hasInlineImage(content);
+
+  let textLength = 0;
+  const btRegex = /\bBT\b/g;
+  const etRegex = /\bET\b/g;
+  let cursor = 0;
+  for (;;) {
+    btRegex.lastIndex = cursor;
+    const bt = btRegex.exec(content);
+    if (!bt) break;
+    etRegex.lastIndex = bt.index + bt[0].length;
+    const et = etRegex.exec(content);
+    // Without an ET no later BT block can be closed either.
+    if (!et) break;
+
+    const textBlock = content.slice(bt.index + bt[0].length, et.index);
+    // ( ... ) Tj
+    forEachOperand(textBlock, "(", /\)\s*Tj/g, (start, end) => {
+      textLength += end - start;
+    });
+    // [ ... ] TJ: count the characters of the strings inside the array.
+    forEachOperand(textBlock, "[", /\]\s*TJ/g, (start, end) => {
+      textLength += sumParenthesizedLengths(textBlock, start, end);
+    });
+
+    cursor = et.index + et[0].length;
+  }
 
   return { textLength, hasImages };
+}
+
+function hasInlineImage(content: string): boolean {
+  const bi = /\bBI\b/g.exec(content);
+  if (!bi) return false;
+  const idRegex = /\bID\b/g;
+  idRegex.lastIndex = bi.index + bi[0].length;
+  const id = idRegex.exec(content);
+  if (!id) return false;
+  const eiRegex = /\bEI\b/g;
+  eiRegex.lastIndex = id.index + id[0].length;
+  return eiRegex.test(content);
+}
+
+/**
+ * Visits the operands matched by `<open>(.*?)<closeRegex>` with the global
+ * flag, i.e. the shortest same-line span after each opener that is followed by
+ * the closing pattern. `closeRegex` must be global and start with the closing
+ * delimiter. Runs in linear time: the opener search, the close search and the
+ * line-break search only move forward.
+ */
+function forEachOperand(
+  text: string,
+  open: string,
+  closeRegex: RegExp,
+  visit: (innerStart: number, innerEnd: number) => void,
+): void {
+  const nextLineBreak = createLineBreakFinder(text);
+  let close: RegExpExecArray | null = null;
+  let cursor = 0;
+
+  for (;;) {
+    const opener = text.indexOf(open, cursor);
+    if (opener === -1) return;
+
+    if (close === null || close.index <= opener) {
+      closeRegex.lastIndex = opener + 1;
+      close = closeRegex.exec(text);
+      if (close === null) return;
+    }
+
+    // `.` does not match line terminators, so no opener before the next line
+    // break can reach a closer after it.
+    const lineBreak = nextLineBreak(opener + 1);
+    if (lineBreak < close.index) {
+      cursor = lineBreak + 1;
+      continue;
+    }
+
+    visit(opener + 1, close.index);
+    cursor = close.index + close[0].length;
+  }
+}
+
+/** Sum of `match.length - 2` over `/\((.*?)\)/g` within text[start, end). */
+function sumParenthesizedLengths(
+  text: string,
+  start: number,
+  end: number,
+): number {
+  let total = 0;
+  let cursor = start;
+  for (;;) {
+    const opener = text.indexOf("(", cursor);
+    if (opener === -1 || opener >= end) return total;
+    const closer = text.indexOf(")", opener + 1);
+    if (closer === -1 || closer >= end) return total;
+    total += closer - opener - 1;
+    cursor = closer + 1;
+  }
+}
+
+/**
+ * Returns a function giving the index of the first JavaScript line terminator
+ * at or after `from` (or `text.length`). Calls must use non-decreasing `from`
+ * values; the total scanning work is linear in the text length.
+ */
+function createLineBreakFinder(text: string): (from: number) => number {
+  let found = -1;
+  return (from: number): number => {
+    if (found >= from) return found;
+    let i = from;
+    while (i < text.length) {
+      const code = text.charCodeAt(i);
+      if (code === 0x0a || code === 0x0d || code === 0x2028 || code === 0x2029)
+        break;
+      i += 1;
+    }
+    found = i;
+    return found;
+  };
+}
+
+function isAsciiDigit(code: number): boolean {
+  return code >= 0x30 && code <= 0x39;
+}
+
+/** Matches the characters of the JavaScript `\s` class. */
+function isJsWhitespace(code: number): boolean {
+  return (
+    (code >= 0x09 && code <= 0x0d) ||
+    code === 0x20 ||
+    code === 0xa0 ||
+    code === 0x1680 ||
+    (code >= 0x2000 && code <= 0x200a) ||
+    code === 0x2028 ||
+    code === 0x2029 ||
+    code === 0x202f ||
+    code === 0x205f ||
+    code === 0x3000 ||
+    code === 0xfeff
+  );
+}
+
+function truncateDigits(digits: string): string {
+  return digits.length > 32 ? `${digits.slice(0, 32)}…` : digits;
 }
 
 function finalizePdfReport(

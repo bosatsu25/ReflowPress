@@ -1,10 +1,26 @@
-import { createHash } from "node:crypto";
-import { readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { constants as fsConstants, createReadStream } from "node:fs";
+import { copyFile, link, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { inspectEpubHealth } from "@reflowpress/quality";
+import {
+  openZipArchive,
+  readEntryBuffer,
+  type EpubLoaderLimits,
+} from "@reflowpress/epub";
+import {
+  computeReportSummary,
+  inspectEpubHealth,
+  resolveEpubArchiveLimits,
+  type HealthReport,
+  type QualityFinding,
+} from "@reflowpress/quality";
 import { REFLOWPRESS_VERSION } from "@reflowpress/core";
-import * as yauzl from "yauzl";
-import type { RepairPlan, RepairProvenance, RepairResult } from "./models.js";
+import type {
+  RepairManifestItemTarget,
+  RepairPlan,
+  RepairProvenance,
+  RepairResult,
+} from "./models.js";
 import { buildCanonicalEpubZip, type ZipOutputEntry } from "./rewriter.js";
 
 export interface ExecuteRepairOptions {
@@ -12,6 +28,26 @@ export interface ExecuteRepairOptions {
   readonly outputPath?: string | undefined;
   readonly writeProvenance?: boolean | undefined;
   readonly toolVersion?: string | undefined;
+  /**
+   * Archive resource limits enforced while reading the source publication.
+   * Defaults to the EPUB loader's DEFAULT_LOADER_LIMITS.
+   */
+  readonly limits?: Partial<EpubLoaderLimits> | undefined;
+}
+
+/** Alternative generated output names tried when the first one is taken. */
+const MAX_GENERATED_NAME_ATTEMPTS = 100;
+
+class RepairInputError extends Error {
+  // A `code` property makes the epub archive helpers rethrow this error as-is.
+  constructor(
+    readonly code: "REPAIR_LIMIT_EXCEEDED" | "REPAIR_UNREADABLE_ARCHIVE",
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "RepairInputError";
+  }
 }
 
 export async function executeRepair(
@@ -19,56 +55,34 @@ export async function executeRepair(
   plan: RepairPlan,
   options: ExecuteRepairOptions = {},
 ): Promise<RepairResult> {
-  const preReport = await inspectEpubHealth(sourcePath, {
-    toolVersion: options.toolVersion,
-  });
-
-  if (plan.actions.length === 0) {
-    return {
-      success: false,
-      sourcePath,
-      actionsApplied: [],
-      preHealthReport: preReport,
-      error: "No repair actions specified in repair plan.",
-    };
-  }
-
-  // Determine final output path
-  let finalOutputPath = options.outputPath;
-  if (!finalOutputPath) {
-    const parsed = path.parse(sourcePath);
-    const timestamp = formatTimestamp(new Date());
-    const newName = `${parsed.name}_repaired_${timestamp}${parsed.ext || ".epub"}`;
-    finalOutputPath = options.outputDir
-      ? path.join(options.outputDir, newName)
-      : path.join(parsed.dir, newName);
-  }
-
-  const stagingPath = `${finalOutputPath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const limits = resolveEpubArchiveLimits(options.limits);
+  let preReport: HealthReport | undefined;
+  let stagingPath: string | undefined;
 
   try {
-    // 1. Read existing entries from source ZIP
-    const archive = await yauzl.openPromise(sourcePath, {
-      autoClose: false,
-      lazyEntries: true,
-      strictFileNames: false,
-      validateEntrySizes: false,
+    preReport = await inspectEpubHealth(sourcePath, {
+      toolVersion: options.toolVersion,
+      limits,
     });
 
-    const entriesMap = new Map<string, Buffer>();
-    let opfFilePath: string | undefined;
-
-    try {
-      for await (const entry of archive.eachEntry()) {
-        const buf = await readZipEntry(archive, entry);
-        entriesMap.set(entry.fileName, buf);
-        if (entry.fileName.endsWith(".opf")) {
-          opfFilePath = entry.fileName;
-        }
-      }
-    } finally {
-      archive.close();
+    if (plan.actions.length === 0) {
+      return {
+        success: false,
+        sourcePath,
+        actionsApplied: [],
+        preHealthReport: preReport,
+        error: "No repair actions specified in repair plan.",
+      };
     }
+
+    // Determine the output path (or, for generated names, the candidates).
+    const outputCandidates = resolveOutputCandidates(sourcePath, options);
+    stagingPath = `${outputCandidates[0]}.tmp-${randomUUID()}`;
+
+    // 1. Read existing entries from the source ZIP within the loader limits
+    const source = await readSourceEntries(sourcePath, limits);
+    const entriesMap = source.entries;
+    let opfFilePath = source.opfFilePath;
 
     const appliedActions: string[] = [];
 
@@ -90,11 +104,11 @@ export async function executeRepair(
             }
           }
         }
-        if (opfFilePath) {
+        if (opfFilePath && isXmlText(opfFilePath)) {
           const containerXml = `<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
-    <rootfile full-path="${opfFilePath}" media-type="application/oebps-package+xml"/>
+    <rootfile full-path="${escapeXmlAttribute(opfFilePath)}" media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>`;
           entriesMap.set(
@@ -105,18 +119,21 @@ export async function executeRepair(
         }
       } else if (action.type === "manifest-mediatype") {
         const targetFile = action.targetFile || opfFilePath;
-        if (targetFile && entriesMap.has(targetFile)) {
-          let opfStr = entriesMap.get(targetFile)!.toString("utf-8");
-          if (action.beforeSnippet && action.afterSnippet) {
-            opfStr = opfStr.replace(action.beforeSnippet, action.afterSnippet);
-            entriesMap.set(targetFile, Buffer.from(opfStr, "utf-8"));
+        const opfBytes = targetFile ? entriesMap.get(targetFile) : undefined;
+        if (targetFile && opfBytes && action.manifestItem) {
+          const updated = setManifestItemMediaType(
+            opfBytes,
+            action.manifestItem,
+          );
+          if (updated) {
+            entriesMap.set(targetFile, updated);
             appliedActions.push(action.id);
           }
         }
       }
     }
 
-    // 3. Assemble and write canonical zip to staging file
+    // 3. Assemble and write canonical zip to a new, exclusively created staging file
     const zipEntries: ZipOutputEntry[] = [];
     for (const [name, contents] of entriesMap.entries()) {
       zipEntries.push({
@@ -127,11 +144,12 @@ export async function executeRepair(
     }
 
     const repairedBuffer = buildCanonicalEpubZip(zipEntries);
-    await writeFile(stagingPath, repairedBuffer);
+    await writeFile(stagingPath, repairedBuffer, { flag: "wx" });
 
     // 4. Re-inspection verification (ADR 0008)
     const postReport = await inspectEpubHealth(stagingPath, {
       toolVersion: options.toolVersion,
+      limits,
     });
 
     // Ensure no new fatal or error findings were introduced
@@ -143,8 +161,7 @@ export async function executeRepair(
     ).length;
 
     if (postFatalOrError > preFatalOrError) {
-      // Abort! Regression detected
-      await safeUnlink(stagingPath);
+      // Abort! Regression detected (the staging file is removed below)
       return {
         success: false,
         sourcePath,
@@ -155,26 +172,25 @@ export async function executeRepair(
       };
     }
 
-    // 5. Commit: atomic move to final output path
-    await rename(stagingPath, finalOutputPath);
-
-    // 6. Optional provenance sidecar
+    // 5. Optional provenance sidecar content
+    let provenanceJson: string | undefined;
     if (options.writeProvenance) {
-      const sourceBuf = await readFile(sourcePath);
-      const outputBuf = await readFile(finalOutputPath);
       const provenance: RepairProvenance = {
         toolVersion: options.toolVersion ?? REFLOWPRESS_VERSION,
         timestamp: new Date().toISOString(),
-        sourceSha256: sha256(sourceBuf),
-        outputSha256: sha256(outputBuf),
+        sourceSha256: await sha256File(sourcePath),
+        outputSha256: sha256(repairedBuffer),
         appliedRuleIds: plan.actions.map((a) => a.ruleId),
       };
-      await writeFile(
-        `${finalOutputPath}.provenance.json`,
-        JSON.stringify(provenance, null, 2),
-        "utf-8",
-      );
+      provenanceJson = JSON.stringify(provenance, null, 2);
     }
+
+    // 6. Commit without ever replacing an existing file or following a link
+    const finalOutputPath = await commitOutput(
+      stagingPath,
+      outputCandidates,
+      provenanceJson,
+    );
 
     return {
       success: true,
@@ -185,27 +201,410 @@ export async function executeRepair(
       postHealthReport: postReport,
     };
   } catch (err) {
-    await safeUnlink(stagingPath);
     return {
       success: false,
       sourcePath,
       actionsApplied: [],
-      preHealthReport: preReport,
-      error: `Repair failed: ${err instanceof Error ? err.message : String(err)}`,
+      preHealthReport:
+        preReport ??
+        failedInspectionReport(sourcePath, err, options.toolVersion),
+      error: `Repair failed: ${describeError(err)}`,
     };
+  } finally {
+    if (stagingPath) await safeUnlink(stagingPath);
   }
 }
 
-async function readZipEntry(
-  archive: yauzl.ZipFile,
-  entry: yauzl.Entry,
-): Promise<Buffer> {
-  const stream = await archive.openReadStreamPromise(entry);
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+/**
+ * Reads every entry of the source archive while enforcing the loader limits:
+ * archive size, entry count and entry names are checked when the archive is
+ * opened, and declared entry sizes are checked against the per-entry and total
+ * limits before anything is decompressed. readEntryBuffer then rejects entries
+ * whose actual size or CRC differs, so memory stays bounded by the limits.
+ */
+async function readSourceEntries(
+  sourcePath: string,
+  limits: EpubLoaderLimits,
+): Promise<{ entries: Map<string, Buffer>; opfFilePath: string | undefined }> {
+  const { archive, entries } = await openZipArchive(
+    sourcePath,
+    limits,
+    (message, cause) =>
+      new RepairInputError("REPAIR_UNREADABLE_ARCHIVE", message, { cause }),
+  );
+
+  try {
+    let totalBytes = 0;
+    for (const [name, entry] of entries) {
+      if (entry.uncompressedSize > limits.maxResourceBytes) {
+        throw new RepairInputError(
+          "REPAIR_LIMIT_EXCEEDED",
+          `Archive entry '${name}' declares ${entry.uncompressedSize} uncompressed bytes, exceeding the ${limits.maxResourceBytes}-byte per-entry limit.`,
+        );
+      }
+      totalBytes += entry.uncompressedSize;
+      if (totalBytes > limits.maxTotalLoadedBytes) {
+        throw new RepairInputError(
+          "REPAIR_LIMIT_EXCEEDED",
+          `The archive entries exceed the total uncompressed size limit of ${limits.maxTotalLoadedBytes} bytes.`,
+        );
+      }
+    }
+
+    const contents = new Map<string, Buffer>();
+    let opfFilePath: string | undefined;
+    for (const [name, entry] of entries) {
+      const buffer = await readEntryBuffer(
+        archive,
+        entry,
+        limits.maxResourceBytes,
+        (message, cause) =>
+          new RepairInputError(
+            "REPAIR_UNREADABLE_ARCHIVE",
+            `Archive entry '${name}': ${message}`,
+            { cause },
+          ),
+      );
+      contents.set(name, buffer);
+      if (name.endsWith(".opf")) {
+        opfFilePath = name;
+      }
+    }
+    return { entries: contents, opfFilePath };
+  } finally {
+    archive.close();
   }
-  return Buffer.concat(chunks);
+}
+
+function resolveOutputCandidates(
+  sourcePath: string,
+  options: ExecuteRepairOptions,
+): string[] {
+  if (options.outputPath) {
+    // An explicit output path is used as-is and never overwritten.
+    return [options.outputPath];
+  }
+
+  const parsed = path.parse(sourcePath);
+  const directory = options.outputDir ?? parsed.dir;
+  const baseName = `${parsed.name}_repaired_${formatTimestamp(new Date())}`;
+  const extension = parsed.ext || ".epub";
+  const candidates: string[] = [];
+  for (let attempt = 1; attempt <= MAX_GENERATED_NAME_ATTEMPTS; attempt += 1) {
+    const suffix = attempt === 1 ? "" : `-${attempt}`;
+    candidates.push(path.join(directory, `${baseName}${suffix}${extension}`));
+  }
+  return candidates;
+}
+
+/**
+ * Publishes the staging file under the first candidate name that does not
+ * exist yet, together with its provenance sidecar. Both are created
+ * exclusively, so an existing file or symbolic link is never replaced or
+ * followed; if the sidecar cannot be created the output is withdrawn again.
+ */
+async function commitOutput(
+  stagingPath: string,
+  candidates: readonly string[],
+  provenanceJson: string | undefined,
+): Promise<string> {
+  let conflict: string | undefined;
+
+  for (const candidate of candidates) {
+    try {
+      await publishExclusive(stagingPath, candidate);
+    } catch (err) {
+      if (!isAlreadyExistsError(err)) throw err;
+      conflict = candidate;
+      continue;
+    }
+
+    if (provenanceJson !== undefined) {
+      const provenancePath = `${candidate}.provenance.json`;
+      try {
+        await writeFile(provenancePath, provenanceJson, {
+          encoding: "utf-8",
+          flag: "wx",
+        });
+      } catch (err) {
+        await safeUnlink(candidate);
+        if (!isAlreadyExistsError(err)) throw err;
+        conflict = provenancePath;
+        continue;
+      }
+    }
+
+    return candidate;
+  }
+
+  throw new Error(
+    candidates.length === 1
+      ? `Refusing to overwrite existing file: ${conflict ?? candidates[0]}`
+      : `No unused output file name is available (last conflict: ${conflict ?? candidates[0]}).`,
+  );
+}
+
+/** Creates `destination` with the staging file's contents, failing with EEXIST if it exists. */
+async function publishExclusive(
+  source: string,
+  destination: string,
+): Promise<void> {
+  try {
+    // link(2) fails with EEXIST instead of replacing the destination.
+    await link(source, destination);
+    return;
+  } catch (err) {
+    if (isAlreadyExistsError(err)) throw err;
+    // Filesystems without hard links: fall back to an exclusive copy.
+  }
+  await copyFile(source, destination, fsConstants.COPYFILE_EXCL);
+}
+
+/**
+ * Sets the media-type of the specific manifest `<item>` that has the given id
+ * and declared media-type. The OPF is edited in place (byte-for-byte outside
+ * the attribute value) rather than re-serialized. Returns undefined when no
+ * matching item is found.
+ */
+function setManifestItemMediaType(
+  opf: Buffer,
+  target: RepairManifestItemTarget,
+): Buffer | undefined {
+  // latin1 maps each byte to one code unit, so ASCII markup can be scanned and
+  // the untouched bytes round-trip exactly, whatever the document encoding.
+  const xml = opf.toString("latin1");
+  const id = Buffer.from(target.id, "utf-8").toString("latin1");
+  const declared = Buffer.from(target.declaredMediaType, "utf-8").toString(
+    "latin1",
+  );
+  if (!isXmlText(target.expectedMediaType)) return undefined;
+  const replacement = Buffer.from(
+    escapeXmlAttribute(target.expectedMediaType),
+    "utf-8",
+  ).toString("latin1");
+
+  const edits: XmlAttributeSpan[] = [];
+  scanManifestItemTags(xml, (attributes) => {
+    const idSpan = attributes.get("id");
+    const mediaTypeSpan = attributes.get("media-type");
+    if (
+      idSpan &&
+      mediaTypeSpan &&
+      xml.slice(idSpan.valueStart, idSpan.valueEnd) === id &&
+      xml.slice(mediaTypeSpan.valueStart, mediaTypeSpan.valueEnd) === declared
+    ) {
+      edits.push(mediaTypeSpan);
+    }
+  });
+  if (edits.length === 0) return undefined;
+
+  let result = "";
+  let last = 0;
+  for (const edit of edits) {
+    result += xml.slice(last, edit.valueStart) + replacement;
+    last = edit.valueEnd;
+  }
+  result += xml.slice(last);
+  return Buffer.from(result, "latin1");
+}
+
+interface XmlAttributeSpan {
+  readonly valueStart: number;
+  readonly valueEnd: number;
+}
+
+/**
+ * Minimal linear-time scanner that reports the attributes of every `<item>`
+ * start tag inside `<manifest>`. Comments, CDATA sections, processing
+ * instructions and DOCTYPE declarations are skipped; scanning stops at the
+ * first malformed construct.
+ */
+function scanManifestItemTags(
+  xml: string,
+  visit: (attributes: ReadonlyMap<string, XmlAttributeSpan>) => void,
+): void {
+  let cursor = 0;
+  let inManifest = false;
+
+  while (cursor < xml.length) {
+    const lt = xml.indexOf("<", cursor);
+    if (lt === -1) return;
+
+    const skipTo = skipNonElementMarkup(xml, lt);
+    if (skipTo === -1) return;
+    if (skipTo !== undefined) {
+      cursor = skipTo;
+      continue;
+    }
+
+    const isEndTag = xml.charCodeAt(lt + 1) === 0x2f; // "/"
+    let i = lt + (isEndTag ? 2 : 1);
+    const nameStart = i;
+    while (i < xml.length && isXmlNameChar(xml.charCodeAt(i))) i += 1;
+    const name = xml.slice(nameStart, i);
+
+    if (isEndTag) {
+      const end = xml.indexOf(">", i);
+      if (end === -1) return;
+      if (name === "manifest") inManifest = false;
+      cursor = end + 1;
+      continue;
+    }
+
+    const attributes = new Map<string, XmlAttributeSpan>();
+    let selfClosing = false;
+    for (;;) {
+      while (i < xml.length && isXmlWhitespace(xml.charCodeAt(i))) i += 1;
+      if (i >= xml.length) return;
+      const code = xml.charCodeAt(i);
+      if (code === 0x3e) {
+        // ">"
+        i += 1;
+        break;
+      }
+      if (code === 0x2f) {
+        // "/>"
+        if (xml.charCodeAt(i + 1) !== 0x3e) return;
+        selfClosing = true;
+        i += 2;
+        break;
+      }
+
+      const attributeStart = i;
+      while (i < xml.length && isXmlNameChar(xml.charCodeAt(i))) i += 1;
+      if (i === attributeStart) return;
+      const attributeName = xml.slice(attributeStart, i);
+      while (i < xml.length && isXmlWhitespace(xml.charCodeAt(i))) i += 1;
+      if (xml.charCodeAt(i) !== 0x3d) return; // "="
+      i += 1;
+      while (i < xml.length && isXmlWhitespace(xml.charCodeAt(i))) i += 1;
+      const quote = xml[i];
+      if (quote !== '"' && quote !== "'") return;
+      const valueEnd = xml.indexOf(quote, i + 1);
+      if (valueEnd === -1) return;
+      if (!attributes.has(attributeName)) {
+        attributes.set(attributeName, { valueStart: i + 1, valueEnd });
+      }
+      i = valueEnd + 1;
+    }
+
+    if (name === "manifest" && !selfClosing) {
+      inManifest = true;
+    } else if (name === "item" && inManifest) {
+      visit(attributes);
+    }
+    cursor = i;
+  }
+}
+
+/**
+ * For markup at `lt` that is not an element tag, returns the index just after
+ * it (or -1 if it is unterminated). Returns undefined for element tags.
+ */
+function skipNonElementMarkup(xml: string, lt: number): number | undefined {
+  const terminate = (end: number, length: number): number =>
+    end === -1 ? -1 : end + length;
+
+  if (xml.startsWith("<!--", lt)) {
+    return terminate(xml.indexOf("-->", lt + 4), 3);
+  }
+  if (xml.startsWith("<![CDATA[", lt)) {
+    return terminate(xml.indexOf("]]>", lt + 9), 3);
+  }
+  if (xml.startsWith("<?", lt)) {
+    return terminate(xml.indexOf("?>", lt + 2), 2);
+  }
+  if (xml.startsWith("<!", lt)) {
+    // DOCTYPE and other declarations, possibly with an internal subset.
+    const close = xml.indexOf(">", lt + 2);
+    if (close === -1) return -1;
+    const subset = xml.indexOf("[", lt + 2);
+    if (subset !== -1 && subset < close) {
+      const subsetEnd = xml.indexOf("]", subset + 1);
+      if (subsetEnd === -1) return -1;
+      return terminate(xml.indexOf(">", subsetEnd + 1), 1);
+    }
+    return close + 1;
+  }
+  return undefined;
+}
+
+function isXmlWhitespace(code: number): boolean {
+  return code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0d;
+}
+
+function isXmlNameChar(code: number): boolean {
+  return (
+    !Number.isNaN(code) &&
+    !isXmlWhitespace(code) &&
+    code !== 0x3d && // =
+    code !== 0x3e && // >
+    code !== 0x2f && // /
+    code !== 0x3c && // <
+    code !== 0x22 && // "
+    code !== 0x27 // '
+  );
+}
+
+/** True when every character is allowed in XML 1.0 documents. */
+function isXmlText(value: string): boolean {
+  return !/[^\t\n\r\x20-퟿-�\u{10000}-\u{10FFFF}]/u.test(value);
+}
+
+const XML_ATTRIBUTE_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&apos;",
+  "\t": "&#9;",
+  "\n": "&#10;",
+  "\r": "&#13;",
+};
+
+function escapeXmlAttribute(value: string): string {
+  return value.replace(
+    /[&<>"'\t\n\r]/g,
+    (character) => XML_ATTRIBUTE_ESCAPES[character] ?? character,
+  );
+}
+
+function failedInspectionReport(
+  sourcePath: string,
+  err: unknown,
+  toolVersion: string | undefined,
+): HealthReport {
+  const findings: QualityFinding[] = [
+    {
+      ruleId: "EPUB-CONTAINER-006",
+      severity: "fatal",
+      category: "container",
+      message: `Pre-repair inspection failed: ${describeError(err)}`,
+      repairability: "none",
+    },
+  ];
+  return {
+    publicationPath: sourcePath,
+    publicationType: "epub",
+    inspectedAt: new Date().toISOString(),
+    durationMs: 1,
+    findings,
+    summary: computeReportSummary(findings),
+    rulesExecuted: [],
+    rulesSkipped: [],
+    toolVersion: toolVersion ?? REFLOWPRESS_VERSION,
+  };
+}
+
+function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  return err.cause instanceof Error
+    ? `${err.message} (${err.cause.message})`
+    : err.message;
+}
+
+function isAlreadyExistsError(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException | undefined)?.code === "EEXIST";
 }
 
 function formatTimestamp(d: Date): string {
@@ -220,6 +619,14 @@ function formatTimestamp(d: Date): string {
 
 function sha256(data: Buffer): string {
   return createHash("sha256").update(data).digest("hex");
+}
+
+async function sha256File(filePath: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(filePath)) {
+    hash.update(chunk as Buffer);
+  }
+  return hash.digest("hex");
 }
 
 async function safeUnlink(filePath: string): Promise<void> {

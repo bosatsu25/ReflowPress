@@ -21,6 +21,14 @@ export {
   type EpubSource,
 } from "./loader.js";
 
+export {
+  openZipArchive,
+  readEntryBuffer,
+  readEntryText,
+  validateArchiveEntryName,
+  type OpenedZipArchive,
+} from "./archive.js";
+
 export { parseNavDocument, parseNcxDocument } from "./navigation.js";
 export * from "./media-overlay.js";
 

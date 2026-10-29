@@ -29,13 +29,14 @@ Each diagnostic rule is uniquely identified by a stable, immutable string ID in 
 
 ### 2.1 Container Rules (`EPUB-CONTAINER-*`)
 
-| Rule ID              | Title                                     | Default Severity | Repairability | Description                                                                     |
-| :------------------- | :---------------------------------------- | :--------------- | :------------ | :------------------------------------------------------------------------------ |
-| `EPUB-CONTAINER-001` | Missing mimetype file                     | `fatal`          | `safe-auto`   | The EPUB archive lacks the mandatory root `mimetype` file.                      |
-| `EPUB-CONTAINER-002` | Invalid mimetype content                  | `error`          | `safe-auto`   | The `mimetype` file does not contain exact ASCII string `application/epub+zip`. |
-| `EPUB-CONTAINER-003` | Mimetype not first entry or is compressed | `warning`        | `safe-auto`   | The `mimetype` entry is compressed or not at byte offset 38 as entry 0.         |
-| `EPUB-CONTAINER-004` | Missing META-INF/container.xml            | `fatal`          | `safe-auto`   | The archive is missing the mandatory `META-INF/container.xml` descriptor.       |
-| `EPUB-CONTAINER-005` | Invalid container.xml syntax              | `error`          | `manual`      | `META-INF/container.xml` contains malformed XML or lacks `<rootfile>`.          |
+| Rule ID              | Title                                           | Default Severity | Repairability | Description                                                                                                                                                                         |
+| :------------------- | :---------------------------------------------- | :--------------- | :------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EPUB-CONTAINER-001` | Missing mimetype file                           | `fatal`          | `safe-auto`   | The EPUB archive lacks the mandatory root `mimetype` file.                                                                                                                          |
+| `EPUB-CONTAINER-002` | Invalid mimetype content                        | `error`          | `safe-auto`   | The `mimetype` file does not contain exact ASCII string `application/epub+zip`.                                                                                                     |
+| `EPUB-CONTAINER-003` | Mimetype not first entry or is compressed       | `warning`        | `safe-auto`   | The `mimetype` entry is compressed or not at byte offset 38 as entry 0.                                                                                                             |
+| `EPUB-CONTAINER-004` | Missing META-INF/container.xml                  | `fatal`          | `safe-auto`   | The archive is missing the mandatory `META-INF/container.xml` descriptor.                                                                                                           |
+| `EPUB-CONTAINER-005` | Invalid container.xml syntax                    | `error`          | `manual`      | `META-INF/container.xml` contains malformed XML or lacks `<rootfile>`.                                                                                                              |
+| `EPUB-CONTAINER-006` | Unreadable, corrupt, or ambiguous archive entry | `fatal`          | `none`        | The ZIP structure or an entry cannot be decoded safely: encrypted, unsupported compression, CRC or size mismatch, or a duplicate entry name. The EPUB loader refuses such archives. |
 
 ### 2.2 Package Document Rules (`EPUB-PACKAGE-*`)
 
@@ -87,10 +88,13 @@ Each diagnostic rule is uniquely identified by a stable, immutable string ID in 
 
 ### 2.8 Security Rules (`EPUB-SEC-*`)
 
-| Rule ID        | Title                             | Default Severity | Repairability | Description                                                                      |
-| :------------- | :-------------------------------- | :--------------- | :------------ | :------------------------------------------------------------------------------- |
-| `EPUB-SEC-001` | Unsafe path traversal in archive  | `fatal`          | `manual`      | ZIP entry path contains `..`, `\`, absolute paths, or NUL characters.            |
-| `EPUB-SEC-002` | Unsafe executable script detected | `warning`        | `manual`      | Content document contains executable `<script>` tag or `javascript:` URI scheme. |
+| Rule ID        | Title                                      | Default Severity | Repairability | Description                                                                                                                                                                                                           |
+| :------------- | :----------------------------------------- | :--------------- | :------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EPUB-SEC-001` | Unsafe path traversal in archive           | `fatal`          | `manual`      | ZIP entry path contains `..`, `\`, absolute paths, or NUL characters.                                                                                                                                                 |
+| `EPUB-SEC-002` | Unsafe executable script detected          | `warning`        | `manual`      | Content document contains executable `<script>` tag or `javascript:` URI scheme.                                                                                                                                      |
+| `EPUB-SEC-003` | Archive exceeds inspection resource limits | `fatal`          | `none`        | Archive size, entry count, or per-entry or total decompressed size exceeds the limits shared with the EPUB loader (a likely decompression bomb). The offending data is not read, so the inspection may be incomplete. |
+
+Inspection reads only documents listed in the manifest, through the same ZIP reader and limits as the EPUB loader. Each rule reports at most 1,000 findings, followed by one summary finding with the same severity.
 
 ### 2.9 Media Overlays Rules (`EPUB-OVERLAY-*`)
 
@@ -103,14 +107,16 @@ Each diagnostic rule is uniquely identified by a stable, immutable string ID in 
 
 ## 3. PDF Quality Gate Rules
 
-| Rule ID           | Title                                    | Default Severity | Category        | Description                                                                                                                        |
-| :---------------- | :--------------------------------------- | :--------------- | :-------------- | :--------------------------------------------------------------------------------------------------------------------------------- |
-| `PDF-STRUCT-001`  | Invalid or unparseable PDF document      | `fatal`          | `pdf-structure` | Missing `%PDF-` header magic signature or corrupted trailer.                                                                       |
-| `PDF-STRUCT-002`  | PDF document contains 0 pages            | `error`          | `pdf-structure` | Document has zero renderable pages.                                                                                                |
-| `PDF-ENCRYPT-001` | PDF is encrypted or password-protected   | `error`          | `pdf-structure` | Encrypted document cannot be inspected headlessly.                                                                                 |
-| `PDF-TEXT-001`    | Page has no extractable text layer       | `warning`        | `pdf-text`      | Page contains 0 extractable text characters (scanned / image-only).                                                                |
-| `PDF-TEXT-002`    | Document has very low text content       | `info`           | `pdf-text`      | Total document text count is unusually low (< 20 characters).                                                                      |
-| `PDF-GEOM-001`    | Page has invalid dimensions              | `error`          | `pdf-geometry`  | Page width or height is zero or negative.                                                                                          |
-| `PDF-GEOM-002`    | Page has extreme aspect ratio            | `info`           | `pdf-geometry`  | Page aspect ratio exceeds standard boundaries (< 0.2 or > 5.0).                                                                    |
-| `PDF-IMAGE-001`   | Raster image rendered without text layer | `info`           | `pdf-image`     | Page renders raster image objects without accompanying text layer.                                                                 |
-| `PDF-FONT-001`    | Font embedding boundary inspection       | `info`           | `pdf-font`      | Informs that PDF.js public API verifies font dictionary presence but full PDF/A conformance requires external certified validator. |
+| Rule ID           | Title                                    | Default Severity | Category        | Description                                                                                                                                                              |
+| :---------------- | :--------------------------------------- | :--------------- | :-------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PDF-STRUCT-001`  | Invalid or unparseable PDF document      | `fatal`          | `pdf-structure` | Missing `%PDF-` header magic signature or corrupted trailer.                                                                                                             |
+| `PDF-STRUCT-002`  | PDF document contains 0 pages            | `error`          | `pdf-structure` | Document has zero renderable pages.                                                                                                                                      |
+| `PDF-STRUCT-003`  | PDF exceeds the maximum inspectable size | `fatal`          | `pdf-structure` | The file is larger than the inspection limit (256 MiB by default) and was not parsed.                                                                                    |
+| `PDF-STRUCT-004`  | PDF inspection truncated at a limit      | `warning`        | `pdf-structure` | More than 10,000 pages or 1,000,000 objects, or content streams beyond 16 MiB each / 256 MiB in total after decompression; only content within the limits was inspected. |
+| `PDF-ENCRYPT-001` | PDF is encrypted or password-protected   | `error`          | `pdf-structure` | Encrypted document cannot be inspected headlessly.                                                                                                                       |
+| `PDF-TEXT-001`    | Page has no extractable text layer       | `warning`        | `pdf-text`      | Page contains 0 extractable text characters (scanned / image-only).                                                                                                      |
+| `PDF-TEXT-002`    | Document has very low text content       | `info`           | `pdf-text`      | Total document text count is unusually low (< 20 characters).                                                                                                            |
+| `PDF-GEOM-001`    | Page has invalid dimensions              | `error`          | `pdf-geometry`  | Page width or height is zero or negative.                                                                                                                                |
+| `PDF-GEOM-002`    | Page has extreme aspect ratio            | `info`           | `pdf-geometry`  | Page aspect ratio exceeds standard boundaries (< 0.2 or > 5.0).                                                                                                          |
+| `PDF-IMAGE-001`   | Raster image rendered without text layer | `info`           | `pdf-image`     | Page renders raster image objects without accompanying text layer.                                                                                                       |
+| `PDF-FONT-001`    | Font embedding boundary inspection       | `info`           | `pdf-font`      | Informs that PDF.js public API verifies font dictionary presence but full PDF/A conformance requires external certified validator.                                       |

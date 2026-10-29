@@ -51,12 +51,17 @@ export function inspectPdfBytes(bytes: Uint8Array): PdfInspectionResult {
   }
 
   // Fallback: check Root Pages /Count <n> if object enumeration yields 0
+  // Two forward scans instead of /Type/Pages[\s\S]*?/Count, which restarts
+  // its lazy scan at every /Type/Pages and is quadratic on crafted files.
   if (pageCount === 0) {
-    const countMatch = contentStr.match(
-      /\/Type\s*\/Pages[\s\S]*?\/Count\s+(\d+)/,
-    );
-    if (countMatch && countMatch[1]) {
-      pageCount = parseInt(countMatch[1], 10);
+    const pagesMatch = /\/Type\s*\/Pages/.exec(contentStr);
+    if (pagesMatch) {
+      const countRegex = /\/Count\s+(\d+)/g;
+      countRegex.lastIndex = pagesMatch.index + pagesMatch[0].length;
+      const countMatch = countRegex.exec(contentStr);
+      if (countMatch && countMatch[1]) {
+        pageCount = parseInt(countMatch[1], 10);
+      }
     }
   }
 
