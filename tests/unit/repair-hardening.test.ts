@@ -353,7 +353,7 @@ async function readZipText(zipPath: string, entryName: string) {
     return await readEntryText(
       archive,
       entry,
-      MiB,
+      8 * MiB,
       (message) => new Error(message),
     );
   } finally {
@@ -446,21 +446,35 @@ describe("Review regressions: media-type repairs", () => {
   }
 
   it("applies many media-type fixes with a single scan of the OPF", async () => {
-    const count = 4000;
+    // ~1,000 fixes (the planner's cap) in a large OPF: one scan per fix made
+    // this quadratic. Padding items are valid, so they plan no actions.
+    const fixes = 1000;
     const items = Array.from(
-      { length: count },
+      { length: fixes },
       (_, i) => `<item id="s${i}" href="s${i}.css" media-type="text/plain"/>`,
     ).join("");
-    const css = Array.from({ length: count }, (_, i) => ({
+    const padding = Array.from(
+      { length: 10_000 },
+      (_, i) => `<item id="p${i}" href="s0.css" media-type="text/css"/>`,
+    ).join("");
+    const css = Array.from({ length: fixes }, (_, i) => ({
       name: `OEBPS/s${i}.css`,
       content: "p{}",
     }));
     const sourcePath = await writeZip(
       "many.epub",
-      epubWithOpf(opfWith(items), css),
+      epubWithOpf(opfWith(items + padding), css),
     );
-    const result = await timedRepair(sourcePath);
+    const plan = await planFor(sourcePath);
+    const start = performance.now();
+    const result = await executeRepair(sourcePath, plan, {
+      outputDir: tempDir,
+    });
+    const elapsed = performance.now() - start;
     expect(result.success).toBe(true);
+    // The whole repair (unzip, rezip, re-inspection) is timed: ~0.7 s here
+    // with one scan, ~4 s with one scan per fix. CI runners are ~2x slower.
+    expect(elapsed).toBeLessThan(3000);
     const repairedOpf = await readZipText(
       result.outputPath!,
       "OEBPS/content.opf",
