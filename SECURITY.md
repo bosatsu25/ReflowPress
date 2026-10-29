@@ -66,7 +66,7 @@ frame-ancestors 'none'
 
 - **XXE and DTD Defense**: The publication loader (`@reflowpress/epub`) uses strict XML parsing without external entity resolution or parameter entity expansion.
 - **Zip-Slip & Traversal Prevention**: File extraction verifies that normalized archive entries remain strictly contained within their designated target root.
-- **Archive Limits**: Entry count, per-entry size, total size and compression ratio are bounded on every archive read path, including quality checks and repair.
+- **Archive Limits**: Archive size, entry count, and per-entry and total decompressed size are checked before anything is decompressed, and actual sizes and CRCs are verified, on every archive read path — loading, quality checks and repair.
 - **Sanitized XHTML**: Reader content is scrubbed to eliminate dangerous tags, `javascript:` pseudoprotocols, and inline event handlers before DOM insertion.
 
 ### 4. IPC & Filesystem Boundaries

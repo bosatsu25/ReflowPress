@@ -126,8 +126,10 @@ This ADR records the following as policy:
 - **Parsers:**
   - Regular expressions that run on publication content must be linear in
     input size.
-  - Every archive read path goes through the ZIP entry, size and
-    compression-ratio limits.
+  - Every archive read path (loader, quality inspection, repair) goes
+    through the EPUB loader's ZIP reader and limits: archive size, entry
+    count, per-entry and total decompressed bytes checked before
+    decompressing, plus actual-size and CRC verification.
 - **Output:** text printed by the CLI is stripped of terminal control
   characters.
 
