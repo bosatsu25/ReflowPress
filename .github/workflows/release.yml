@@ -102,6 +102,13 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          # Only the installers and their checksums: electron-builder also
+          # leaves builder-debug.yml (build machine paths and config),
+          # latest*.yml and blockmaps, which this app has no updater for.
           files: |
-            release-artifacts/*
+            release-artifacts/*.exe
+            release-artifacts/*.AppImage
+            release-artifacts/*.deb
+            release-artifacts/SHA256SUMS.txt
+          fail_on_unmatched_files: true
           body_path: docs/releases/${{ steps.version.outputs.number }}.md
