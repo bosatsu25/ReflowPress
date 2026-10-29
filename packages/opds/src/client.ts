@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Transform } from "node:stream";
 import { parseOpdsFeed } from "./feed-parser.js";
 import type { OpdsFeed } from "./models.js";
@@ -44,6 +44,50 @@ export function validateSafeUrl(urlStr: string): URL {
   }
 
   return parsed;
+}
+
+/** Headers that carry credentials and must not follow a cross-origin redirect. */
+const CREDENTIAL_HEADERS = new Set([
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+]);
+
+function stripCredentialHeaders(headers: Record<string, string>): void {
+  for (const name of Object.keys(headers)) {
+    if (CREDENTIAL_HEADERS.has(name.toLowerCase())) delete headers[name];
+  }
+}
+
+/** Reads a response body as text, failing as soon as it exceeds maxBytes. */
+async function readTextCapped(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const tooLarge = () =>
+    new Error(
+      `OPDS feed response exceeded maximum allowed size of ${maxBytes} bytes.`,
+    );
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body?.cancel();
+    throw tooLarge();
+  }
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf-8");
 }
 
 export async function fetchRemoteOpdsFeed(
@@ -103,9 +147,10 @@ export async function fetchRemoteOpdsFeed(
           new URL(location, currentUrl).toString(),
         );
 
-        // Strip Authorization header on cross-origin redirects
-        if (nextUrl.origin !== currentUrl.origin && headers.Authorization) {
-          delete headers.Authorization;
+        await response.body?.cancel();
+        // Credentials never follow a redirect to another origin.
+        if (nextUrl.origin !== currentUrl.origin) {
+          stripCredentialHeaders(headers);
         }
 
         currentUrl = nextUrl;
@@ -120,14 +165,7 @@ export async function fetchRemoteOpdsFeed(
       }
 
       const contentType = response.headers.get("content-type") ?? "";
-      const text = await response.text();
-
-      if (Buffer.byteLength(text) > maxBytes) {
-        throw new Error(
-          `OPDS feed response exceeded maximum allowed size of ${maxBytes} bytes.`,
-        );
-      }
-
+      const text = await readTextCapped(response, maxBytes);
       return parseOpdsFeed(text, contentType);
     }
 
@@ -155,7 +193,7 @@ export async function downloadOpdsPublication(
     });
   }
 
-  const tempPath = `${destinationPath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const tempPath = `${destinationPath}.tmp-${randomUUID()}`;
 
   try {
     const headers: Record<string, string> = {
@@ -191,8 +229,9 @@ export async function downloadOpdsPublication(
         const nextUrl = validateSafeUrl(
           new URL(location, currentUrl).toString(),
         );
-        if (nextUrl.origin !== currentUrl.origin && headers.Authorization) {
-          delete headers.Authorization;
+        await response.body?.cancel();
+        if (nextUrl.origin !== currentUrl.origin) {
+          stripCredentialHeaders(headers);
         }
         currentUrl = nextUrl;
         redirectCount++;
@@ -232,7 +271,7 @@ export async function downloadOpdsPublication(
       },
     });
 
-    const fileStream = createWriteStream(tempPath);
+    const fileStream = createWriteStream(tempPath, { flags: "wx" });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const nodeReadable = response.body as any;
 

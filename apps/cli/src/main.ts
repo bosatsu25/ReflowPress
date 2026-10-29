@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { parseArgs } from "node:util";
@@ -27,6 +28,7 @@ import {
   deserializeSyncBundle,
   createRestorePlan,
   applyRestore,
+  syncRecordsToCatalogBooks,
   type SyncSnapshot,
 } from "@reflowpress/sync";
 import {
@@ -177,6 +179,15 @@ async function findFiles(
 }
 
 /**
+ * Removes control characters other than newline and tab, including ESC and
+ * the C1 range that some terminals treat as CSI.
+ */
+export function stripTerminalControls(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
+}
+
+/**
  * Runs the ReflowPress command-line interface.
  * Returns the process exit code (0, 1, or 2).
  */
@@ -184,8 +195,12 @@ export async function runCli(
   args: readonly string[],
   io: CliIo = {},
 ): Promise<number> {
-  const log = io.stdout ?? ((m: string) => console.log(m));
-  const logErr = io.stderr ?? ((m: string) => console.error(m));
+  const writeOut = io.stdout ?? ((m: string) => console.log(m));
+  const writeErr = io.stderr ?? ((m: string) => console.error(m));
+  // Book metadata, feed titles and validation messages come from untrusted
+  // files and servers; escape sequences in them must not reach the terminal.
+  const log = (m: string) => writeOut(stripTerminalControls(m));
+  const logErr = (m: string) => writeErr(stripTerminalControls(m));
 
   let parsed;
   try {
@@ -404,6 +419,15 @@ function catalogToSnapshot(
   };
 }
 
+/** Aborts on the first SIGINT or SIGTERM so long-running commands stop cleanly. */
+function shutdownSignal(): AbortSignal {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  process.once("SIGINT", abort);
+  process.once("SIGTERM", abort);
+  return controller.signal;
+}
+
 async function runOpds(
   inputs: readonly string[],
   values: Record<string, unknown>,
@@ -428,6 +452,8 @@ async function runOpds(
       port,
       host,
       allowLan,
+      // On the network the catalog URL itself is the credential.
+      accessToken: allowLan ? randomBytes(24).toString("base64url") : undefined,
       getCatalog: async () => loadCatalogFile(catalogPath),
     });
 
@@ -449,15 +475,14 @@ async function runOpds(
         log("Press Ctrl+C to stop.");
       }
 
-      if (options.signal) {
-        return new Promise<number>((resolve) => {
-          options.signal?.addEventListener("abort", async () => {
-            await server.stop();
-            resolve(EXIT_CODES.SUCCESS);
-          });
+      // Serve until the caller aborts or the user presses Ctrl+C.
+      const signal = options.signal ?? shutdownSignal();
+      return new Promise<number>((resolve) => {
+        signal.addEventListener("abort", async () => {
+          await server.stop();
+          resolve(EXIT_CODES.SUCCESS);
         });
-      }
-      return EXIT_CODES.SUCCESS;
+      });
     } catch (err) {
       logErr(
         `OPDS server failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -802,22 +827,11 @@ async function runRestore(
     );
 
     if (catalogPath) {
-      catalog.books = restoredSnapshot.books.map((b) => ({
-        id: b.id,
-        title: b.data.title,
-        creator: b.data.author,
-        format: b.data.format,
-        collectionIds: b.data.collections ? [...b.data.collections] : [],
-        tags: b.data.tags ? [...b.data.tags] : [],
-        dateAdded: b.updatedAt,
-        filePath: "",
-        fileSizeBytes: 0,
-        modifiedTimeMs: Date.now(),
-        availability: {
-          exists: false,
-          lastChecked: new Date().toISOString(),
-        },
-      }));
+      // Books already in the catalog keep their file paths.
+      catalog.books = syncRecordsToCatalogBooks(
+        restoredSnapshot.books,
+        catalog.books,
+      );
       catalog.updatedAt = new Date().toISOString();
       await saveCatalogFile(catalogPath, catalog);
     }

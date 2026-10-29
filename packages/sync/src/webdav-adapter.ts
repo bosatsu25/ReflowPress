@@ -5,14 +5,27 @@ export interface WebdavSyncAdapterOptions {
   readonly remoteUrl: string;
   readonly username?: string | undefined;
   readonly password?: string | undefined;
+  /** Covers the whole exchange, including reading the response body. */
   readonly timeoutMs?: number | undefined;
   readonly allowInsecure?: boolean | undefined;
+  /** Largest response body accepted, after decompression. */
+  readonly maxResponseBytes?: number | undefined;
+}
+
+export const DEFAULT_WEBDAV_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
+
+interface WebdavResponse {
+  readonly status: number;
+  readonly statusText: string;
+  readonly ok: boolean;
+  readonly body: string;
 }
 
 export class WebdavSyncAdapter {
   private readonly baseUrl: URL;
   private readonly authHeader?: string;
   private readonly timeoutMs: number;
+  private readonly maxResponseBytes: number;
 
   constructor(options: WebdavSyncAdapterOptions) {
     let url: URL;
@@ -21,6 +34,14 @@ export class WebdavSyncAdapter {
     } catch {
       throw new Error(
         `Invalid WebDAV URL: '${sanitizeUrl(options.remoteUrl)}'`,
+      );
+    }
+
+    if (url.username || url.password) {
+      // fetch() refuses such URLs and echoes them, password included, in
+      // its error message.
+      throw new Error(
+        "Put WebDAV credentials in the username and password fields, not in the URL.",
       );
     }
 
@@ -36,6 +57,8 @@ export class WebdavSyncAdapter {
 
     this.baseUrl = url;
     this.timeoutMs = options.timeoutMs ?? 20_000;
+    this.maxResponseBytes =
+      options.maxResponseBytes ?? DEFAULT_WEBDAV_MAX_RESPONSE_BYTES;
 
     if (options.username && options.password) {
       const token = Buffer.from(
@@ -50,14 +73,14 @@ export class WebdavSyncAdapter {
   }
 
   public async ensureCollection(): Promise<void> {
-    const res = await this.fetchWithTimeout(this.baseUrl.toString(), {
+    const res = await this.request(this.baseUrl.toString(), {
       method: "MKCOL",
     });
 
     // 201 Created or 405 Method Not Allowed (collection already exists) are acceptable
     if (!res.ok && res.status !== 405 && res.status !== 301) {
       // Check if it already exists via PROPFIND
-      const propRes = await this.fetchWithTimeout(this.baseUrl.toString(), {
+      const propRes = await this.request(this.baseUrl.toString(), {
         method: "PROPFIND",
         headers: { Depth: "0" },
       });
@@ -75,7 +98,7 @@ export class WebdavSyncAdapter {
       this.baseUrl.toString().replace(/\/?$/, "/"),
     );
 
-    const checkRes = await this.fetchWithTimeout(manifestUrl.toString(), {
+    const checkRes = await this.request(manifestUrl.toString(), {
       method: "GET",
     });
 
@@ -89,18 +112,18 @@ export class WebdavSyncAdapter {
       );
     }
 
-    const manifestText = await checkRes.text();
+    const manifestText = checkRes.body;
 
     const fetchJson = async (filename: string): Promise<string> => {
       const fileUrl = new URL(
         filename,
         this.baseUrl.toString().replace(/\/?$/, "/"),
       );
-      const r = await this.fetchWithTimeout(fileUrl.toString(), {
+      const r = await this.request(fileUrl.toString(), {
         method: "GET",
       });
       if (!r.ok) return "[]";
-      return r.text();
+      return r.body;
     };
 
     const libraryText = await fetchJson("library.json");
@@ -127,7 +150,7 @@ export class WebdavSyncAdapter {
 
     for (const [filename, content] of Object.entries(files)) {
       const fileUrl = new URL(filename, baseWithSlash);
-      const res = await this.fetchWithTimeout(fileUrl.toString(), {
+      const res = await this.request(fileUrl.toString(), {
         method: "PUT",
         headers: {
           "Content-Type": "application/json; charset=utf-8",
@@ -143,16 +166,21 @@ export class WebdavSyncAdapter {
     }
   }
 
-  private async fetchWithTimeout(
+  /**
+   * Sends one request and reads the whole body under a single deadline and
+   * byte cap. Redirects are never followed: the HTTPS check above only holds
+   * for the configured origin, and a 307/308 would re-send PUT bodies.
+   */
+  private async request(
     url: string,
     init: RequestInit,
-  ): Promise<Response> {
+  ): Promise<WebdavResponse> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
       const headers: Record<string, string> = {
-        "User-Agent": "ReflowPress/0.9 (WebDAV Sync Adapter)",
+        "User-Agent": "ReflowPress (WebDAV Sync Adapter)",
         ...(init.headers as Record<string, string> | undefined),
       };
 
@@ -160,15 +188,62 @@ export class WebdavSyncAdapter {
         headers.Authorization = this.authHeader;
       }
 
-      return await fetch(url, {
+      const res = await fetch(url, {
         ...init,
         headers,
+        redirect: "manual",
         signal: controller.signal,
       });
+
+      const body = await readBodyCapped(res, this.maxResponseBytes);
+      const redirected = res.status >= 300 && res.status < 400;
+      return {
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok && !redirected,
+        body,
+      };
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error(
+          `WebDAV request timed out after ${this.timeoutMs} ms.`,
+          { cause: err },
+        );
+      }
+      throw err;
     } finally {
       clearTimeout(timeoutId);
     }
   }
+}
+
+async function readBodyCapped(
+  res: Response,
+  maxBytes: number,
+): Promise<string> {
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel();
+    throw new Error(
+      `WebDAV response is too large (${declared} bytes; limit ${maxBytes}).`,
+    );
+  }
+  if (!res.body) return "";
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error(`WebDAV response exceeded ${maxBytes} bytes.`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf-8");
 }
 
 export function sanitizeUrl(rawUrl: string): string {
@@ -179,6 +254,7 @@ export function sanitizeUrl(rawUrl: string): string {
     }
     return u.toString();
   } catch {
-    return rawUrl.replace(/:\/\/([^:]+):([^@]+)@/, "://$1:***@");
+    // Hide the whole userinfo, which may itself contain "@" or ":".
+    return rawUrl.replace(/:\/\/[^/?#]*@/, "://***@");
   }
 }

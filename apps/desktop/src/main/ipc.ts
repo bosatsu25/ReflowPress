@@ -4,6 +4,7 @@ import {
   type BrowserWindow,
   type IpcMainInvokeEvent,
 } from "electron";
+import { randomBytes } from "node:crypto";
 import { readFile, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { loadEpub } from "@reflowpress/epub";
@@ -598,6 +599,10 @@ export function registerIpcHandlers(
       activeOpdsServer = new OpdsServer({
         port,
         allowLan,
+        // On the network the catalog URL itself is the credential.
+        accessToken: allowLan
+          ? randomBytes(24).toString("base64url")
+          : undefined,
         getCatalog: () => libraryRepo.load(),
       });
       activeOpdsInfo = await activeOpdsServer.start();
