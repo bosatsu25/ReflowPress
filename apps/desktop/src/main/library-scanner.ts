@@ -57,6 +57,14 @@ export function computeBookId(normalizedFilePath: string): string {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
+/** Cover image types the library stores, with the extension used on disk. */
+const COVER_EXTENSIONS: Readonly<Record<string, string>> = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/gif": ".gif",
+  "image/webp": ".webp",
+};
+
 export async function extractEpubMetadataAndCover(
   filePath: string,
   bookId: string,
@@ -78,7 +86,7 @@ export async function extractEpubMetadataAndCover(
   // Attempt to find cover in resources
   const coverResource = pub.resources.find(
     (r) =>
-      r.mediaType.startsWith("image/") &&
+      COVER_EXTENSIONS[r.mediaType.toLowerCase()] !== undefined &&
       (r.href.toLowerCase().includes("cover") ||
         r.href.toLowerCase().includes("thumbnail")),
   );
@@ -86,7 +94,9 @@ export async function extractEpubMetadataAndCover(
   if (coverResource && coverResource.bytes.length > 0) {
     try {
       await mkdir(coversDir, { recursive: true });
-      const ext = path.extname(coverResource.href) || ".png";
+      // The extension comes from the declared raster type, never from the
+      // book's own file name, so a book cannot drop e.g. a .hta file here.
+      const ext = COVER_EXTENSIONS[coverResource.mediaType.toLowerCase()];
       const coverFileName = `${bookId}${ext}`;
       const targetCoverPath = path.join(coversDir, coverFileName);
       await writeFile(targetCoverPath, Buffer.from(coverResource.bytes));

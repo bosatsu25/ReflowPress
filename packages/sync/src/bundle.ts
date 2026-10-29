@@ -1,9 +1,14 @@
 import { UpgradeRequiredError } from "@reflowpress/core";
+import { type SyncSnapshot, SYNC_SCHEMA_VERSION } from "./models.js";
 import {
-  type SyncSnapshot,
-  type SyncManifest,
-  SYNC_SCHEMA_VERSION,
-} from "./models.js";
+  validateAnnotations,
+  validateBookmarks,
+  validateBooks,
+  validateConflicts,
+  validateManifest,
+  validateReadingPositions,
+  validateTombstones,
+} from "./validate.js";
 
 export interface SerializedBundleFiles {
   readonly "manifest.json": string;
@@ -62,52 +67,58 @@ export function deserializeSyncBundle(
       ? manifestContent
       : new TextDecoder().decode(manifestContent);
 
-  const manifest = JSON.parse(manifestStr) as SyncManifest;
+  const rawManifest = JSON.parse(manifestStr) as unknown;
 
-  if (manifest.schemaVersion > SYNC_SCHEMA_VERSION) {
+  // A newer app may have changed the manifest's shape, so the version is
+  // checked before anything else to report "upgrade required" accurately.
+  const declaredVersion =
+    typeof rawManifest === "object" && rawManifest !== null
+      ? (rawManifest as { schemaVersion?: unknown }).schemaVersion
+      : undefined;
+  if (
+    typeof declaredVersion === "number" &&
+    declaredVersion > SYNC_SCHEMA_VERSION
+  ) {
     throw new UpgradeRequiredError(
       "Sync Bundle",
       SYNC_SCHEMA_VERSION,
-      manifest.schemaVersion,
+      declaredVersion,
     );
   }
 
-  const parseJsonFile = <T>(name: string, fallback: T): T => {
+  const manifest = validateManifest(rawManifest);
+
+  const parseJsonFile = (name: string): unknown => {
     const raw = files[name];
-    if (!raw) return fallback;
+    if (!raw) return undefined;
     const str = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
     try {
-      return JSON.parse(str) as T;
+      return JSON.parse(str) as unknown;
     } catch {
-      return fallback;
+      return undefined;
     }
   };
 
-  const books = parseJsonFile<SyncSnapshot["books"]>("library.json", []);
-  const annotations = parseJsonFile<SyncSnapshot["annotations"]>(
-    "annotations.json",
-    [],
-  );
-  const readerState = parseJsonFile<{
-    bookmarks?: SyncSnapshot["bookmarks"];
-    readingPositions?: SyncSnapshot["readingPositions"];
-  }>("reader-state.json", {});
-
-  const tombstones = parseJsonFile<SyncSnapshot["tombstones"]>(
-    "tombstones.json",
-    [],
-  );
-  const conflicts = parseJsonFile<SyncSnapshot["conflicts"]>(
-    "conflicts.json",
-    [],
-  );
+  // Every collection is validated record by record; malformed records are
+  // dropped rather than trusted.
+  const books = validateBooks(parseJsonFile("library.json"));
+  const annotations = validateAnnotations(parseJsonFile("annotations.json"));
+  const readerState = parseJsonFile("reader-state.json");
+  const readerStateObject =
+    typeof readerState === "object" && readerState !== null
+      ? (readerState as Record<string, unknown>)
+      : {};
+  const tombstones = validateTombstones(parseJsonFile("tombstones.json"));
+  const conflicts = validateConflicts(parseJsonFile("conflicts.json"));
 
   return {
     manifest,
     books,
     annotations,
-    bookmarks: readerState.bookmarks ?? [],
-    readingPositions: readerState.readingPositions ?? [],
+    bookmarks: validateBookmarks(readerStateObject.bookmarks),
+    readingPositions: validateReadingPositions(
+      readerStateObject.readingPositions,
+    ),
     tombstones,
     conflicts,
   };

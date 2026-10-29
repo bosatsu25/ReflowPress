@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import { createReadStream, createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Transform } from "node:stream";
 import * as path from "node:path";
 import type {
@@ -63,38 +63,32 @@ export class FilesystemDeviceAdapter implements DeviceAdapter {
     items: readonly TransferItem[],
     targetDevice: DeviceDescriptor,
   ): Promise<TransferPlan> {
-    const root = path.resolve(targetDevice.mountPoint);
-    const booksDir = targetDevice.profile?.booksDirectory
-      ? path.join(root, targetDevice.profile.booksDirectory)
-      : root;
+    const root = await realDeviceRoot(targetDevice.mountPoint);
+    const booksDir = await resolveBooksDirectory(
+      root,
+      targetDevice.profile?.booksDirectory ?? "",
+    );
 
     const planItems: TransferPlanItem[] = [];
     let totalBytesToCopy = 0;
     let hasConflicts = false;
 
     for (const item of items) {
-      if (
-        item.targetFilename.includes("..") ||
-        path.isAbsolute(item.targetFilename)
-      ) {
-        throw new Error(
-          `Path traversal escape attempt detected in target filename: '${item.targetFilename}'.`,
-        );
-      }
-
-      // Destination safety containment check
-      const safeFilename = path.basename(item.targetFilename);
-      const targetPath = path.join(booksDir, safeFilename);
-
-      this.assertPathContained(targetPath, root);
+      assertSafeFilename(item.targetFilename);
+      const targetPath = path.join(booksDir, item.targetFilename);
+      assertWithin(targetPath, root);
 
       let status: TransferPlanItem["status"];
       let reason: string | undefined;
 
       try {
-        const destStat = await fs.stat(targetPath);
-        // Destination file exists: check if identical
-        if (destStat.size === item.byteSize) {
+        // lstat: a symlink planted on the device is never followed.
+        const destStat = await fs.lstat(targetPath);
+        if (!destStat.isFile()) {
+          status = "conflict";
+          reason = "A non-regular file (link or folder) has this name";
+          hasConflicts = true;
+        } else if (destStat.size === item.byteSize) {
           const sourceHash =
             item.sourceSha256 ?? (await computeFileHash(item.sourcePath));
           const destHash = await computeFileHash(targetPath);
@@ -158,6 +152,7 @@ export class FilesystemDeviceAdapter implements DeviceAdapter {
     let skipped = 0;
     let failed = 0;
     const errors: { path: string; error: string }[] = [];
+    const root = await realDeviceRoot(plan.device.mountPoint);
 
     for (const item of plan.items) {
       if (options.signal?.aborted) {
@@ -182,18 +177,22 @@ export class FilesystemDeviceAdapter implements DeviceAdapter {
 
       // Execute verified copy
       const targetDir = path.dirname(item.targetPath);
-      await fs.mkdir(targetDir, { recursive: true });
-
-      const tempFile = path.join(
-        targetDir,
-        `.tmp-transfer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${path.basename(item.targetPath)}`,
-      );
+      const tempFile = path.join(targetDir, `.tmp-transfer-${randomUUID()}`);
+      let tempCreated = false;
 
       try {
+        // The plan is re-checked here: the device can change between
+        // planning and copying, and a plan may come from elsewhere.
+        assertSafeFilename(path.basename(item.targetPath));
+        assertWithin(item.targetPath, root);
+        await fs.mkdir(targetDir, { recursive: true });
+        assertWithin(path.join(await fs.realpath(targetDir), "x"), root);
+
         const sourceHash = await computeFileHash(item.sourcePath);
 
         const readStream = createReadStream(item.sourcePath);
-        const writeStream = createWriteStream(tempFile);
+        const writeStream = createWriteStream(tempFile, { flags: "wx" });
+        tempCreated = true;
         const destHashMeter = createHash("sha256");
 
         const hashTransform = new Transform({
@@ -212,8 +211,7 @@ export class FilesystemDeviceAdapter implements DeviceAdapter {
           );
         }
 
-        // Atomically rename into place
-        await fs.rename(tempFile, item.targetPath);
+        await commitWithoutOverwrite(tempFile, item.targetPath);
         successful++;
       } catch (err) {
         failed++;
@@ -221,7 +219,7 @@ export class FilesystemDeviceAdapter implements DeviceAdapter {
           path: item.sourcePath,
           error: err instanceof Error ? err.message : String(err),
         });
-        await fs.unlink(tempFile).catch(() => {});
+        if (tempCreated) await fs.unlink(tempFile).catch(() => {});
       }
     }
 
@@ -232,20 +230,102 @@ export class FilesystemDeviceAdapter implements DeviceAdapter {
       errors,
     };
   }
+}
 
-  private assertPathContained(targetPath: string, root: string): void {
-    const resolvedTarget = path.resolve(targetPath);
-    const resolvedRoot = path.resolve(root);
+async function realDeviceRoot(mountPoint: string): Promise<string> {
+  return fs.realpath(path.resolve(mountPoint));
+}
 
-    if (
-      !resolvedTarget.startsWith(resolvedRoot) ||
-      resolvedTarget === resolvedRoot
-    ) {
-      throw new Error(
-        `Path traversal denied: target path '${resolvedTarget}' escapes device root '${resolvedRoot}'.`,
-      );
-    }
+/**
+ * Resolves the profile's books folder on the device, following any link only
+ * if it stays on the device.
+ */
+async function resolveBooksDirectory(
+  root: string,
+  booksDirectory: string,
+): Promise<string> {
+  const booksDir = path.join(root, booksDirectory);
+  if (booksDir === root) return root;
+  try {
+    const real = await fs.realpath(booksDir);
+    assertWithin(path.join(real, "x"), root);
+    return real;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return booksDir;
+    throw err;
   }
+}
+
+/** A single path segment: no separators, no dot segments, no control characters. */
+function assertSafeFilename(name: string): void {
+  if (
+    name.length === 0 ||
+    name === "." ||
+    name === ".." ||
+    /[/\\]/.test(name) ||
+    // eslint-disable-next-line no-control-regex
+    /[\u0000-\u001f]/.test(name) ||
+    path.isAbsolute(name)
+  ) {
+    throw new Error(
+      `Path traversal escape attempt detected in target filename: '${name}'.`,
+    );
+  }
+}
+
+function assertWithin(target: string, root: string): void {
+  const relative = path.relative(root, path.resolve(target));
+  if (
+    relative === "" ||
+    path.isAbsolute(relative) ||
+    relative.split(path.sep)[0] === ".."
+  ) {
+    throw new Error(
+      `Path traversal denied: target path '${target}' escapes device root '${root}'.`,
+    );
+  }
+}
+
+/**
+ * Moves the verified temp file into place without replacing a file that
+ * appeared after planning. A hard link is atomic and fails if the name is
+ * taken; FAT and exFAT, the usual e-reader filesystems, have no hard links,
+ * so those fall back to a check immediately before the rename.
+ */
+async function commitWithoutOverwrite(
+  tempFile: string,
+  targetPath: string,
+): Promise<void> {
+  const appeared = (cause?: unknown) =>
+    new Error(
+      "A file with this name appeared on the device during the transfer; it was left untouched.",
+      { cause },
+    );
+
+  let linked = false;
+  try {
+    await fs.link(tempFile, targetPath);
+    linked = true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") throw appeared(err);
+    // Any other failure means no hard links here (EPERM on Linux vfat,
+    // ENOTSUP on macOS, EISDIR from libuv on Windows FAT).
+  }
+  if (linked) {
+    await fs.unlink(tempFile);
+    return;
+  }
+
+  try {
+    await fs.lstat(targetPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      await fs.rename(tempFile, targetPath);
+      return;
+    }
+    throw err;
+  }
+  throw appeared();
 }
 
 export async function computeFileHash(filePath: string): Promise<string> {
