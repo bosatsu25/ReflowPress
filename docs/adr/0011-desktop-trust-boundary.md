@@ -132,6 +132,13 @@ This ADR records the following as policy:
     decompressing, plus actual-size and CRC verification.
 - **Output:** text printed by the CLI is stripped of terminal control
   characters.
+- **PDF export:** publication content is rendered by headless Chromium
+  with its OS sandbox always on, JavaScript disabled and no network.
+  When the sandbox cannot start (running as root, or Ubuntu 23.10+
+  restricting unprivileged user namespaces), export fails with an error
+  instead of silently running unsandboxed. The only opt-out is setting
+  `REFLOWPRESS_CHROMIUM_NO_SANDBOX=1` explicitly, and the export result
+  then carries a warning.
 
 ## Consequences
 

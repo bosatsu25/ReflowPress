@@ -103,7 +103,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           # Only the installers and their checksums: electron-builder also
-          # leaves builder-debug.yml (build machine paths and config),
+          # leaves builder-debug.yml (its resolved packaging config),
           # latest*.yml and blockmaps, which this app has no updater for.
           files: |
             release-artifacts/*.exe
