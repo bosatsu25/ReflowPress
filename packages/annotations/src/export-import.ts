@@ -91,8 +91,26 @@ function escapeMarkdown(text: string): string {
   return text.replace(/[&<>\\[\]`]/g, (ch) => MARKDOWN_ESCAPES[ch] ?? ch);
 }
 
+/**
+ * Collapses line breaks, with the whitespace around them, into single spaces.
+ * Split-based, because a single regex matching whitespace around the breaks
+ * is quadratic on long blank runs.
+ */
 function singleLine(text: string): string {
-  return text.replace(/\s*[\r\n]+\s*/g, " ");
+  const parts = text.split(/[\r\n]+/);
+  if (parts.length === 1) return text;
+  const last = parts.length - 1;
+  const kept: string[] = [];
+  parts.forEach((part, index) => {
+    const trimmed =
+      index === 0
+        ? part.trimEnd()
+        : index === last
+          ? part.trimStart()
+          : part.trim();
+    if (trimmed || index === 0 || index === last) kept.push(trimmed);
+  });
+  return kept.join(" ");
 }
 
 function isAnnotationColor(value: unknown): value is AnnotationColor {
@@ -161,7 +179,7 @@ export function exportAnnotationsToMarkdown(
     lines.push(`## Highlights\n`);
     for (const h of highlights) {
       const quoted = escapeMarkdown(String(h.textQuote?.exact ?? ""))
-        .split(/\r?\n/)
+        .split(/\r\n|\r|\n/)
         .map((line) => `> ${line}`)
         .join("\n");
       lines.push(`${quoted}\n`);
@@ -176,7 +194,7 @@ export function exportAnnotationsToMarkdown(
       );
       if (linkedNote) {
         lines.push(
-          `- **Note**: ${escapeMarkdown(String(linkedNote.body)).replace(/\r?\n/g, "\n  ")}`,
+          `- **Note**: ${escapeMarkdown(String(linkedNote.body)).replace(/\r\n|\r|\n/g, "\n  ")}`,
         );
       }
       lines.push(``);
@@ -191,7 +209,7 @@ export function exportAnnotationsToMarkdown(
       const locStr = escapeMarkdown(singleLine(describeLocation(n.locator)));
       lines.push(`- **Location**: ${locStr}`);
       lines.push(
-        `  ${escapeMarkdown(String(n.body)).replace(/\r?\n/g, "\n  ")}\n`,
+        `  ${escapeMarkdown(String(n.body)).replace(/\r\n|\r|\n/g, "\n  ")}\n`,
       );
     }
   }

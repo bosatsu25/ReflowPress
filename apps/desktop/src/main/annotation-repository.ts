@@ -1,4 +1,4 @@
-import { readFile, open, rename, mkdir, unlink } from "node:fs/promises";
+import { readFile, open, rename, mkdir, stat, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { UpgradeRequiredError } from "@reflowpress/core";
@@ -60,6 +60,11 @@ async function readBoundedTextFile(
   filePath: string,
   maxBytes: number,
 ): Promise<{ ok: true; text: string } | { ok: false; reason: string }> {
+  // Opening a FIFO blocks until a writer appears, so refuse non-regular
+  // files before opening; the handle is checked again after opening.
+  if (!(await stat(filePath)).isFile()) {
+    return { ok: false, reason: "Import source is not a regular file" };
+  }
   const handle = await open(filePath, "r");
   try {
     const info = await handle.stat();

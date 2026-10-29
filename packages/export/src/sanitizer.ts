@@ -155,12 +155,67 @@ export function classifyUrl(value: string): UrlKind {
 // CSS sanitization
 // ---------------------------------------------------------------------------
 
-const SAFE_CSS_URL_KINDS: ReadonlySet<UrlKind> = new Set<UrlKind>([
-  "empty",
-  "fragment",
-  "relative",
-  "data-image",
-]);
+/** Characters a browser ignores or strips while resolving a URL. */
+const URL_IGNORABLE_PATTERN =
+  // eslint-disable-next-line no-control-regex
+  /[\s\u0000-\u001f\u007f-\u009f\u00ad\u200b-\u200f\u2028\u2029\u2060\ufeff]/;
+
+/** data: types that may load through CSS: images and fonts. */
+const SAFE_CSS_DATA_PREFIXES = [
+  "image/",
+  "font/",
+  "application/font-",
+  "application/x-font-",
+  "application/vnd.ms-fontobject",
+] as const;
+
+/**
+ * Decides whether the url() argument starting at `start` of lowercased,
+ * escape-decoded CSS text stays local: relative, a fragment, or a data: image
+ * or font. Only the scheme (and for data: a short media-type prefix) is read,
+ * and a scheme scan stops at the next non-scheme character such as the `(`
+ * of a following url(, so checking every occurrence stays linear.
+ */
+function isSafeCssUrlAt(text: string, start: number): boolean {
+  const length = text.length;
+  const ignorable = (index: number) =>
+    index < length && URL_IGNORABLE_PATTERN.test(text[index]!);
+  let index = start;
+  while (ignorable(index)) index += 1;
+  if (text[index] === '"' || text[index] === "'") {
+    index += 1;
+    while (ignorable(index)) index += 1;
+  }
+
+  // Network-path reference ("//host", with either slash direction).
+  if (text[index] === "/" || text[index] === "\\") {
+    let next = index + 1;
+    while (ignorable(next)) next += 1;
+    return text[next] !== "/" && text[next] !== "\\";
+  }
+
+  let scheme = "";
+  let cursor = index;
+  while (cursor < length) {
+    const ch = text[cursor]!;
+    if (/[a-z0-9+.-]/.test(ch)) {
+      if (scheme.length < 16) scheme += ch;
+    } else if (!URL_IGNORABLE_PATTERN.test(ch)) {
+      break;
+    }
+    cursor += 1;
+  }
+  if (text[cursor] !== ":" || !/^[a-z]/.test(scheme)) {
+    return true; // No scheme: relative path, fragment or empty.
+  }
+  if (scheme !== "data") return false;
+
+  let mediaType = "";
+  for (let k = cursor + 1; k < length && mediaType.length < 40; k += 1) {
+    if (!URL_IGNORABLE_PATTERN.test(text[k]!)) mediaType += text[k];
+  }
+  return SAFE_CSS_DATA_PREFIXES.some((prefix) => mediaType.startsWith(prefix));
+}
 
 const DANGEROUS_CSS_PATTERN =
   /expression\s*\(|javascript:|vbscript:|livescript:|-moz-binding|(?:^|[^a-z0-9-])behavior\s*:|@import|image-set\s*\(|cross-fade\s*\(|(?:^|[^a-z0-9-])image\s*\(|(?:^|[^a-z0-9-])src\s*\(/;
@@ -220,29 +275,27 @@ function stripCssComments(css: string): string {
   return out + css.slice(segmentStart);
 }
 
-function stripCssQuotes(value: string): string {
-  return value.replace(/^\s*['"]?/, "").replace(/['"]?\s*$/, "");
-}
-
 /**
  * Checks CSS text (a stylesheet or a style attribute) after decoding escapes and
  * dropping comments: no script-ish constructs, no @import, and every url()
  * target must be relative, a fragment or a data:image URL.
  */
 function isSafeCss(css: string): boolean {
-  const flattened = decodeCssEscapes(stripCssComments(css)).toLowerCase();
-  if (DANGEROUS_CSS_PATTERN.test(flattened)) return false;
-
-  let index = 0;
-  for (;;) {
-    const start = flattened.indexOf("url(", index);
-    if (start === -1) return true;
-    const end = flattened.indexOf(")", start + 4);
-    if (end === -1) return false;
-    const target = stripCssQuotes(flattened.slice(start + 4, end));
-    if (!SAFE_CSS_URL_KINDS.has(classifyUrl(target))) return false;
-    index = end + 1;
-  }
+  // Both readings are checked: comment stripping that disagrees with the
+  // browser's tokenizer (e.g. "/*" inside an unquoted url()) must not hide
+  // anything, and string boundaries are ignored for the same reason.
+  return [css, stripCssComments(css)].every((variant) => {
+    const flattened = decodeCssEscapes(variant).toLowerCase();
+    if (DANGEROUS_CSS_PATTERN.test(flattened)) return false;
+    for (
+      let start = flattened.indexOf("url(");
+      start !== -1;
+      start = flattened.indexOf("url(", start + 4)
+    ) {
+      if (!isSafeCssUrlAt(flattened, start + 4)) return false;
+    }
+    return true;
+  });
 }
 
 function startsWithIgnoreCase(
@@ -290,8 +343,11 @@ function rewriteCss(css: string): string {
   while (index < css.length) {
     const ch = css[index];
     if (ch === "/" && css[index + 1] === "*") {
+      // Comments are dropped from the output.
+      out += css.slice(segmentStart, index);
       const end = css.indexOf("*/", index + 2);
       index = end === -1 ? css.length : end + 2;
+      segmentStart = index;
     } else if (ch === '"' || ch === "'") {
       index = skipCssString(css, index);
     } else if (ch === "\\") {
@@ -319,8 +375,8 @@ function rewriteCss(css: string): string {
         segmentStart = css.length;
         break;
       }
-      const target = decodeCssEscapes(stripCssQuotes(css.slice(argStart, end)));
-      if (!SAFE_CSS_URL_KINDS.has(classifyUrl(target))) {
+      const target = decodeCssEscapes(css.slice(argStart, end)).toLowerCase();
+      if (!isSafeCssUrlAt(target, 0)) {
         out += `${css.slice(segmentStart, index)}none`;
         segmentStart = end + 1;
       }
@@ -917,7 +973,15 @@ class AllowlistSerializer {
         // use/gradients/patterns/textPath: same-document references only.
         return kind === "fragment" ? value : undefined;
       }
-      // Hyperlinks: internal (fragment or relative) targets only.
+      // Hyperlinks navigate only when clicked; keep web and mail links on
+      // HTML anchors, internal targets everywhere else.
+      if (
+        context === "html" &&
+        elementName === "a" &&
+        (kind === "http" || kind === "mailto")
+      ) {
+        return value;
+      }
       return kind === "fragment" || kind === "relative" ? value : undefined;
     }
 

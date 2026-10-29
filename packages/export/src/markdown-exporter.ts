@@ -57,10 +57,39 @@ export function escapeMarkdownText(text: string): string {
   return text.replace(/[&<>\\[\]`]/g, (ch) => MARKDOWN_ESCAPES[ch] ?? ch);
 }
 
-/** Collapses line breaks for inline-only Markdown contexts. */
+/**
+ * Collapses line breaks, with the whitespace around them, into single spaces
+ * for inline-only Markdown contexts. Split-based, because a single regex
+ * matching whitespace around the breaks is quadratic on long blank runs.
+ */
 function singleLine(text: string): string {
-  return text.replace(/\s*[\r\n]+\s*/g, " ");
+  const parts = text.split(/[\r\n]+/);
+  if (parts.length === 1) return text;
+  const last = parts.length - 1;
+  const kept: string[] = [];
+  parts.forEach((part, index) => {
+    const trimmed =
+      index === 0
+        ? part.trimEnd()
+        : index === last
+          ? part.trimStart()
+          : part.trim();
+    if (trimmed || index === 0 || index === last) kept.push(trimmed);
+  });
+  return kept.join(" ");
 }
+
+/** Length of the longest backtick run, without spreading a huge array. */
+function longestBacktickRun(text: string): number {
+  let longest = 0;
+  for (const run of text.match(/`+/g) ?? []) {
+    if (run.length > longest) longest = run.length;
+  }
+  return longest;
+}
+
+/** Blockquote and list nesting beyond this is flattened, not re-prefixed. */
+const MAX_BLOCK_NESTING = 8;
 
 /**
  * Encodes a link/image destination so it cannot break out of `( ... )`.
@@ -82,22 +111,14 @@ function encodeMarkdownDestination(url: string): string {
 function codeSpan(content: string): string {
   const text = singleLine(content);
   if (!text.trim()) return "";
-  const longestRun = Math.max(
-    0,
-    ...(text.match(/`+/g) ?? []).map((run) => run.length),
-  );
-  const fence = "`".repeat(longestRun + 1);
+  const fence = "`".repeat(longestBacktickRun(text) + 1);
   const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";
   return `${fence}${pad}${text}${pad}${fence}`;
 }
 
 /** Fenced code block whose fence cannot be closed by the content. */
 function fencedCodeBlock(content: string): string {
-  const longestRun = Math.max(
-    2,
-    ...(content.match(/`+/g) ?? []).map((run) => run.length),
-  );
-  const fence = "`".repeat(longestRun + 1);
+  const fence = "`".repeat(Math.max(2, longestBacktickRun(content)) + 1);
   return `\n\n${fence}\n${content.replace(/^\n+|\n+$/g, "")}\n${fence}\n\n`;
 }
 
@@ -314,6 +335,9 @@ class MarkdownConverter {
 
     if (tag === "blockquote") {
       const content = this.convertChildren(el, sectionHref, depth).trim();
+      // Each level re-prefixes every line below it; past a few levels that
+      // only multiplies output, so deeper quotes are emitted flat.
+      if (blockNesting(el) > MAX_BLOCK_NESTING) return `\n\n${content}\n\n`;
       const quoted = content
         .split("\n")
         .map((line) => `> ${line}`)
@@ -520,8 +544,12 @@ class MarkdownConverter {
         ).trim();
         const marker = isOrdered ? `${count}. ` : "- ";
         if (isOrdered) count += 1;
-        // Indent continuation lines so nested blocks stay inside the item.
-        const indent = " ".repeat(marker.length);
+        // Indent continuation lines so nested blocks stay inside the item
+        // (up to a nesting limit, beyond which items stay flat).
+        const indent =
+          blockNesting(listEl) > MAX_BLOCK_NESTING
+            ? ""
+            : " ".repeat(marker.length);
         const [first = "", ...rest] = text.split("\n");
         lines.push(
           [
@@ -539,7 +567,9 @@ class MarkdownConverter {
     sectionHref: string,
     depth: number,
   ): string {
-    const rows = tableEl.getElementsByTagName("tr") as unknown as XmlElement[];
+    // Only this table's own rows: getElementsByTagName would also return the
+    // rows of nested tables and convert them again at every level.
+    const rows = ownTableRows(tableEl);
     if (rows.length === 0) return "";
 
     const matrix: string[][] = [];
@@ -575,7 +605,8 @@ class MarkdownConverter {
     if (matrix.length === 0) return "";
 
     // Determine max columns
-    const colCount = Math.max(...matrix.map((r) => r.length));
+    let colCount = 0;
+    for (const row of matrix) colCount = Math.max(colCount, row.length);
     const headerRow = matrix[0]!;
     while (headerRow.length < colCount) {
       headerRow.push("");
@@ -650,4 +681,45 @@ ${authorMd ? `\n*${authorMd}*\n` : ""}
     assets: converter.extractedAssets,
     warnings: converter.getWarnings(),
   };
+}
+
+function elementName(node: XmlNode): string {
+  return node.nodeType === 1
+    ? ((node as unknown as XmlElement).localName || "").toLowerCase()
+    : "";
+}
+
+/** Rows that belong to this table, directly or through thead/tbody/tfoot. */
+function ownTableRows(tableEl: XmlElement): XmlElement[] {
+  const rows: XmlElement[] = [];
+  const children = tableEl.childNodes as unknown as XmlNode[];
+  for (let i = 0; i < children.length; i += 1) {
+    const child = children[i]!;
+    const name = elementName(child);
+    if (name === "tr") {
+      rows.push(child as unknown as XmlElement);
+    } else if (name === "thead" || name === "tbody" || name === "tfoot") {
+      const sectionRows = child.childNodes as unknown as XmlNode[];
+      for (let j = 0; j < sectionRows.length; j += 1) {
+        if (elementName(sectionRows[j]!) === "tr") {
+          rows.push(sectionRows[j] as unknown as XmlElement);
+        }
+      }
+    }
+  }
+  return rows;
+}
+
+/** Number of blockquote and list elements enclosing (and including) `el`. */
+function blockNesting(el: XmlElement): number {
+  let count = 0;
+  for (
+    let node: XmlNode | null = el;
+    node;
+    node = node.parentNode as XmlNode | null
+  ) {
+    const name = elementName(node);
+    if (name === "blockquote" || name === "ul" || name === "ol") count += 1;
+  }
+  return count;
 }

@@ -390,3 +390,30 @@ describe("Desktop annotation repository file handling", () => {
     expect((await repo.load()).annotations).toEqual([]);
   });
 });
+
+describe("Annotation export line handling", () => {
+  it("treats a lone CR as a line break inside note blocks", () => {
+    const store: AnnotationStore = {
+      schemaVersion: 1,
+      annotations: [
+        {
+          ...validNote,
+          publicationId: "p",
+          body: "first\r# not a heading\rlast",
+        } as Annotation,
+      ],
+    };
+    const md = exportAnnotationsToMarkdown(store, pub, "p");
+    expect(md).not.toMatch(/^# not a heading/m);
+  });
+
+  it("collapses whitespace-heavy titles in linear time", () => {
+    const started = performance.now();
+    const md = exportAnnotationsToMarkdown(
+      { schemaVersion: 1, annotations: [] },
+      { ...pub, title: `${" ".repeat(200_000)}\nTitle` },
+    );
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(md.split("\n")[0]).toMatch(/^#\s+Title$/);
+  });
+});

@@ -242,7 +242,9 @@ describe("Shared DOM sanitizer", () => {
     const inputs = [
       `<p>${"<script".repeat(40000)}</p>`,
       `<p>${"<!--".repeat(40000)}</p>`,
-      "<".repeat(200000),
+      // xmldom spends ~7 µs per character here; keep the input small enough
+      // for slow CI runners while a quadratic pass would still blow the limit.
+      "<".repeat(50000),
       `<html xmlns="${XHTML}"><body>${"<div>".repeat(5000)}x${"</div>".repeat(5000)}</body></html>`,
     ];
     for (const input of inputs) {
@@ -678,4 +680,92 @@ describe("PDF renderer hardening", () => {
       ).toBe(true);
     }
   }, 60000);
+});
+
+describe("Review regressions", () => {
+  const body = (markup: string) =>
+    `<html xmlns="${XHTML}"><body>${markup}</body></html>`;
+
+  it("checks every url() even when a string or comment would hide it", () => {
+    for (const style of [
+      `content:"url(";background:url(https://evil.example/a)`,
+      `background:url(x/*);background-image:u\\72l(https://evil.example/t.png);x:url(*/)`,
+    ]) {
+      const out = sanitizeXhtmlSection(body(`<p style='${style}'>t</p>`));
+      expect(out).not.toContain("evil.example");
+    }
+    expect(
+      sanitizeStylesheet(
+        `p{background:url(x/*)} q{background:u\\72l(https://evil.example/t)} r{x:url(*/)}`,
+      ).dropped,
+    ).toBe(true);
+  });
+
+  it("keeps data: fonts and drops comments from stylesheets", () => {
+    const result = sanitizeStylesheet(
+      `/* note */@font-face{font-family:f;src:url(data:font/woff2;base64,AAAA)}`,
+    );
+    expect(result.dropped).toBe(false);
+    expect(result.css).toContain("url(data:font/woff2;base64,AAAA)");
+    expect(result.css).not.toContain("note");
+  });
+
+  it("keeps web and mail links on anchors but not remote loads", () => {
+    const out = sanitizeXhtmlSection(
+      body(
+        `<a href="https://example.com/">web</a><a href="mailto:a@example.com">mail</a><img src="https://example.com/x.png" alt="x"/><a href="javascript:alert(1)">js</a>`,
+      ),
+    );
+    expect(out).toContain('href="https://example.com/"');
+    expect(out).toContain('href="mailto:a@example.com"');
+    expect(out).not.toContain("x.png");
+    expect(out).not.toContain("javascript");
+  });
+
+  it("converts nested tables once per row in Markdown", () => {
+    const nested =
+      "<table><tr><td>".repeat(20) + "x" + "</td></tr></table>".repeat(20);
+    const started = performance.now();
+    const { markdown } = exportToMarkdown(
+      publication({ readingOrder: [section(nested)] }),
+    );
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(markdown.length).toBeLessThan(10_000);
+  });
+
+  it("bounds the prefix work for deeply nested blockquotes", () => {
+    const lines = Array.from({ length: 20_000 }, (_, i) => `line ${i}`).join(
+      "\n",
+    );
+    const nested =
+      "<blockquote>".repeat(200) +
+      `<pre>${lines}</pre>` +
+      "</blockquote>".repeat(200);
+    const started = performance.now();
+    const { markdown } = exportToMarkdown(
+      publication({ readingOrder: [section(nested)] }),
+    );
+    expect(performance.now() - started).toBeLessThan(5000);
+    expect(markdown.length).toBeLessThan(lines.length * 12);
+  });
+
+  it("collapses long whitespace in headings in linear time", () => {
+    const started = performance.now();
+    const { markdown } = exportToMarkdown(
+      publication({
+        readingOrder: [section(`<h1>${" ".repeat(200_000)}x</h1>`)],
+      }),
+    );
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(markdown).toContain("# x");
+  });
+
+  it("handles huge backtick runs in code without overflowing the stack", () => {
+    const { markdown } = exportToMarkdown(
+      publication({
+        readingOrder: [section(`<code>${"`a".repeat(200_000)}</code>`)],
+      }),
+    );
+    expect(markdown).toContain("`` `a`a`a");
+  });
 });
