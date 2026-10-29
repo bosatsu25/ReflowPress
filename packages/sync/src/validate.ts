@@ -73,9 +73,7 @@ function stringList(value: unknown): string[] | undefined | null {
   return [...value];
 }
 
-function recordEnvelope(
-  raw: unknown,
-): {
+function recordEnvelope(raw: unknown): {
   id: string;
   rev: string;
   updatedAt: string;
