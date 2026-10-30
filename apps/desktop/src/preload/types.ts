@@ -44,7 +44,9 @@ export interface CrashRecoveryStatus {
 export interface DesktopBridge {
   openFileDialog(): Promise<string | null>;
   openMultipleFilesDialog(): Promise<string[]>;
-  openDirectoryDialog(): Promise<string | null>;
+  openDirectoryDialog(
+    purpose?: "library" | "sync" | "device",
+  ): Promise<string | null>;
   loadPublication(filePath: string): Promise<LoadedPublicationResult>;
   readPdfBytes(filePath: string): Promise<Uint8Array>;
   loadReadingPosition(
@@ -57,7 +59,6 @@ export interface DesktopBridge {
   clearCrashRecoveryStatus?(): Promise<boolean>;
   // Library API
   loadLibrary(): Promise<LibraryCatalog>;
-  saveLibrary(catalog: LibraryCatalog): Promise<void>;
   scanLibraryPaths(
     paths: string[],
   ): Promise<{ catalog: LibraryCatalog; result: ScanResult }>;
@@ -99,6 +100,7 @@ export interface DesktopBridge {
     filters: Array<{ name: string; extensions: string[] }>;
   }): Promise<string | null>;
   showOpenAnnotationFileDialog(): Promise<string | null>;
+  showOpenBackupFileDialog(): Promise<string | null>;
   // Quality & Safe Repair API
   inspectPublication(filePath: string): Promise<HealthReport>;
   repairPublication(
@@ -145,7 +147,7 @@ export interface DesktopBridge {
     bundlePath: string,
     policy?: "keep-local" | "keep-remote" | "keep-both",
   ): Promise<{ restoredBooks: number; resolvedConflicts: number }>;
-  discoverDevices(targetDir?: string): Promise<readonly DeviceDescriptor[]>;
+  discoverDevices(targetDir: string): Promise<readonly DeviceDescriptor[]>;
   transferToDevice(
     targetMount: string,
     bookIds: string[],

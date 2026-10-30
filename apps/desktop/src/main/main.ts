@@ -1,10 +1,22 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, protocol, session } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerIpcHandlers } from "./ipc.js";
 import { ReadingPositionStore } from "./reading-position-store.js";
 import { JsonLibraryRepository } from "./library-repository.js";
 import { JsonAnnotationRepository } from "./annotation-repository.js";
+import {
+  APP_ENTRY_URL,
+  APP_SCHEME,
+  isAppUrl,
+} from "./security/app-protocol.js";
+import { registerAppProtocolHandler } from "./security/app-protocol-handler.js";
+import {
+  hardenSession,
+  hardenWebContents,
+  hasOrigin,
+} from "./security/session-hardening.js";
+import { PathGrantRegistry } from "./security/path-grants.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +25,27 @@ import { CrashRecoveryManager } from "./crash-recovery.js";
 
 let mainWindow: BrowserWindow | null = null;
 let crashRecoveryManager: CrashRecoveryManager | null = null;
+
+const devServerOrigin = process.env.VITE_DEV_SERVER_URL ?? null;
+
+function isRendererUrl(url: string): boolean {
+  return (
+    isAppUrl(url) ||
+    (devServerOrigin !== null && hasOrigin(url, devServerOrigin))
+  );
+}
+
+// Must run before the app is ready.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: APP_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true },
+  },
+]);
+
+app.on("web-contents-created", (_event, contents) => {
+  hardenWebContents(contents, devServerOrigin);
+});
 
 function parseInitialFileArgument(): string | null {
   const args = process.argv;
@@ -43,21 +76,14 @@ async function createWindow(
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webviewTag: false,
+      // Chromium's spellchecker downloads dictionaries from Google on
+      // Windows and Linux, which would break the no-network guarantee.
+      spellcheck: false,
     },
   });
-
-  // Strict security: prevent new windows and unauthorized external navigation
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  window.webContents.on("will-navigate", (event, navigationUrl) => {
-    // Only allow navigating to app bundle file:// URLs or Vite dev server
-    const parsed = new URL(navigationUrl);
-    if (
-      parsed.protocol !== "file:" &&
-      !navigationUrl.startsWith("http://localhost:5173")
-    ) {
-      event.preventDefault();
-    }
-  });
+  // Popups, webviews and off-app navigation are refused for every
+  // WebContents in the "web-contents-created" handler above.
 
   const positionStorePath = path.join(
     app.getPath("userData"),
@@ -84,6 +110,16 @@ async function createWindow(
   );
 
   const initialFile = parseInitialFileArgument();
+  const pathGrants = new PathGrantRegistry();
+  // The launch argument comes from the user (shell or file association),
+  // not from the renderer, so it is readable without a dialog.
+  if (initialFile) pathGrants.grantFile(initialFile, ["read"]);
+  // The same holds for the publication recorded by crash recovery.
+  const recoveredPath =
+    crashRecovery.getRecoveryStatus()?.lastActiveSession?.lastActivePublication
+      ?.filePath;
+  if (recoveredPath) pathGrants.grantFile(recoveredPath, ["read"]);
+
   registerIpcHandlers(
     window,
     positionStore,
@@ -92,15 +128,14 @@ async function createWindow(
     coversDir,
     initialFile,
     crashRecovery,
+    { pathGrants, isRendererUrl },
   );
 
   // Load renderer
-  const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
-  if (isDev) {
-    await window.loadURL(process.env.VITE_DEV_SERVER_URL!);
+  if (devServerOrigin !== null) {
+    await window.loadURL(devServerOrigin);
   } else {
-    const indexPath = path.resolve(__dirname, "../renderer/index.html");
-    await window.loadFile(indexPath);
+    await window.loadURL(APP_ENTRY_URL);
   }
 
   // Also notify via event if renderer is already listening
@@ -112,6 +147,9 @@ async function createWindow(
 }
 
 app.whenReady().then(async () => {
+  hardenSession(session.defaultSession, devServerOrigin);
+  registerAppProtocolHandler(protocol, path.resolve(__dirname, "../renderer"));
+
   crashRecoveryManager = new CrashRecoveryManager(app.getPath("userData"));
   await crashRecoveryManager.checkCrashAndInitialize();
 

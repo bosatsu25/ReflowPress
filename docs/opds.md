@@ -7,12 +7,14 @@ ReflowPress features a built-in Open Publication Distribution System (OPDS) serv
 ## 1. Architecture & Privacy Guarantees
 
 - **Strictly Read-Only**: The OPDS server serves publications and cover thumbnails with HTTP `GET` and `HEAD` requests. Mutation requests (`POST`, `PUT`, `DELETE`) are rejected with `405 Method Not Allowed`.
-- **Loopback Default**: By default, the server binds exclusively to `127.0.0.1`. Remote devices cannot connect until the user explicitly checks **Allow LAN access** (`0.0.0.0`) in the UI or passes `--allow-lan` in the CLI.
+- **Loopback Default**: By default, the server binds exclusively to `127.0.0.1`. Remote devices cannot connect until the user explicitly checks **Allow LAN access** (`0.0.0.0`) in the UI or passes `--allow-lan` in the CLI. The desktop app asks for confirmation in a native dialog before sharing on the network.
+- **Host Validation**: In loopback mode, requests whose `Host` header is not `127.0.0.1`, `localhost` or `[::1]` on the server's port are refused with `421 Misdirected Request`. A web page that rebinds its own domain to `127.0.0.1` (DNS rebinding) therefore cannot read the catalog.
+- **LAN Access Token**: In LAN mode every URL starts with a random, per-start access token (`http://<ip>:<port>/<token>/opds/v2/catalog`). Requests without the token get `404`. Share the full URL shown in the app or CLI with your reader; anyone who has that URL can download the library until the server stops. The token travels over plain HTTP, so use LAN mode only on networks you trust.
 - **Opaque URIs**: Physical host paths (e.g. `C:\Users\...` or `/home/...`) are never exposed in feed manifests. Publications are referenced via opaque acquisition URLs:
   ```text
   http://192.168.1.100:3000/opds/v2/publications/<book-id>/acquisition
   ```
-- **Byte-Range Requests**: Complies with RFC 9110 for `206 Partial Content` and `416 Range Not Satisfiable`. Reader applications can stream large audio overlays and media files efficiently without downloading entire publications at once.
+- **Byte-Range Requests**: Complies with RFC 9110 for `206 Partial Content` and `416 Range Not Satisfiable`, including suffix ranges (`bytes=-500`). Reader applications can stream large audio overlays and media files efficiently without downloading entire publications at once.
 
 ---
 

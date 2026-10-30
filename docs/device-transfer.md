@@ -22,7 +22,8 @@ ReflowPress automatically inspects the target mount point or drive root for hard
 - **Transactional Staging**: Files are written first to `.tmp-transfer-...` temporary files and verified before atomic renaming into place.
 - **SHA-256 Checksums**: Both source and destination data are validated. Identical files on the target device are automatically skipped without re-writing flash storage.
 - **Collision Protection**: If a file with the same name exists but has different contents or size, ReflowPress marks it as a conflict and refuses to silently overwrite it.
-- **Path Traversal Containment**: Directory escape sequences (`..`) and absolute destination filenames are strictly blocked, preventing writes outside the designated device root.
+- **Path Traversal Containment**: Destination names must be a single file name (no separators or `.`/`..` segments). The device's books folder is resolved with `realpath` and must stay on the device, so a link planted on the device cannot redirect writes elsewhere.
+- **No Overwrites After Planning**: Existing links at the destination name are reported as conflicts and never followed. Targets are re-checked before writing, and the verified copy is committed without replacing a file that appeared after the plan was made (atomically via a hard link where the filesystem supports it; on FAT/exFAT by checking immediately before the rename).
 
 ---
 

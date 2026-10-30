@@ -1,21 +1,28 @@
 import { stat } from "node:fs/promises";
 import { DOMParser, type Document } from "@xmldom/xmldom";
-import * as yauzl from "yauzl";
+import type { Entry } from "yauzl";
 import {
   computeReportSummary,
   deduplicateFindings,
   type HealthReport,
   type QualityFinding,
   type PublicationMediaOverlaysReport,
+  type Severity,
 } from "../models.js";
 import {
   extractReferencesFromCss,
   extractReferencesFromXml,
+  createInternalPathResolver,
   resolveInternalPath,
 } from "./resource-graph.js";
 import {
+  DEFAULT_LOADER_LIMITS,
+  openZipArchive,
   parseSmilDocument,
+  readEntryBuffer,
+  type EpubLoaderLimits,
   type MediaOverlayDocument,
+  type OpenedZipArchive,
 } from "@reflowpress/epub";
 import { REFLOWPRESS_VERSION } from "@reflowpress/core";
 
@@ -42,19 +49,178 @@ const KNOWN_MIME_TYPES: Record<string, string> = {
   ".opus": "audio/opus",
 };
 
+/**
+ * Maximum number of distinct findings reported per rule. Attacker-controlled
+ * markup can otherwise produce millions of unique findings (for example one
+ * broken reference per element) and exhaust memory while building the report.
+ */
+const MAX_FINDINGS_PER_RULE = 1000;
+
+/** Distinct references resolved per document and per inspection. */
+const MAX_REFERENCES_PER_DOCUMENT = 20_000;
+const MAX_REFERENCES_TOTAL = 100_000;
+
+/** Stand-in counted towards the summary once a rule's list is full. */
+const RESOURCE_002_OVERFLOW: QualityFinding = {
+  ruleId: "EPUB-RESOURCE-002",
+  severity: "warning",
+  category: "resource",
+  message: "",
+  repairability: "manual",
+};
+
+/** Upper bound on the length of attacker-controlled text quoted in findings. */
+const MAX_QUOTED_TEXT_CHARS = 512;
+
 interface ZipEntryInfo {
-  readonly entry: yauzl.Entry;
+  readonly entry: Entry;
   readonly index: number;
+}
+
+export interface EpubHealthInspectionOptions {
+  readonly toolVersion?: string | undefined;
+  /**
+   * Overrides for the archive resource limits. Defaults to the EPUB loader's
+   * DEFAULT_LOADER_LIMITS so inspection accepts exactly what the loader accepts.
+   */
+  readonly limits?: Partial<EpubLoaderLimits> | undefined;
+}
+
+/**
+ * Resolves archive resource limits, falling back to DEFAULT_LOADER_LIMITS for
+ * any override that is missing or not a positive safe integer.
+ */
+export function resolveEpubArchiveLimits(
+  overrides?: Partial<EpubLoaderLimits> | undefined,
+): EpubLoaderLimits {
+  const resolved: { -readonly [K in keyof EpubLoaderLimits]: number } = {
+    ...DEFAULT_LOADER_LIMITS,
+  };
+  if (overrides) {
+    for (const key of Object.keys(resolved) as (keyof EpubLoaderLimits)[]) {
+      const value = overrides[key];
+      if (
+        typeof value === "number" &&
+        Number.isSafeInteger(value) &&
+        value > 0
+      ) {
+        resolved[key] = value;
+      }
+    }
+  }
+  return resolved;
+}
+
+class ArchiveInspectionError extends Error {
+  // A `code` property makes the epub archive helpers rethrow this error as-is
+  // instead of wrapping it in a generic one.
+  readonly code = "EPUB_ARCHIVE_INSPECTION";
+
+  constructor(message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
+    this.name = "ArchiveInspectionError";
+  }
+}
+
+const SEVERITY_RANK: Record<Severity, number> = {
+  info: 1,
+  warning: 2,
+  error: 3,
+  fatal: 4,
+};
+
+/**
+ * Collects findings while bounding memory: duplicates are dropped on insertion
+ * and at most `maxPerRule` distinct findings are kept per rule. Overflow is
+ * summarized by a single finding per rule.
+ */
+class BoundedFindingList {
+  private readonly items: QualityFinding[] = [];
+  private readonly signatures = new Set<string>();
+  private readonly perRule = new Map<string, number>();
+  private readonly overflow = new Map<
+    string,
+    { mostSevere: QualityFinding; count: number }
+  >();
+
+  constructor(private readonly maxPerRule: number) {}
+
+  /** Appends a one-off notice that must not disappear into a rule's cap. */
+  pushNotice(finding: QualityFinding): void {
+    this.items.push(finding);
+  }
+
+  /** Whether further findings of this rule only count towards the summary. */
+  isFull(ruleId: string): boolean {
+    return (this.perRule.get(ruleId) ?? 0) >= this.maxPerRule;
+  }
+
+  push(finding: QualityFinding): void {
+    const count = this.perRule.get(finding.ruleId) ?? 0;
+    if (count < this.maxPerRule) {
+      const signature = `${finding.ruleId}::${finding.location?.path ?? ""}::${finding.location?.line ?? ""}::${finding.message}`;
+      if (this.signatures.has(signature)) return;
+      this.perRule.set(finding.ruleId, count + 1);
+      this.signatures.add(signature);
+      this.items.push(finding);
+      return;
+    }
+
+    const overflow = this.overflow.get(finding.ruleId);
+    if (!overflow) {
+      this.overflow.set(finding.ruleId, { mostSevere: finding, count: 1 });
+    } else {
+      overflow.count += 1;
+      if (
+        SEVERITY_RANK[finding.severity] >
+        SEVERITY_RANK[overflow.mostSevere.severity]
+      ) {
+        overflow.mostSevere = finding;
+      }
+    }
+  }
+
+  toArray(): QualityFinding[] {
+    const result = [...this.items];
+    for (const [ruleId, { mostSevere, count }] of this.overflow) {
+      result.push({
+        ruleId,
+        severity: mostSevere.severity,
+        category: mostSevere.category,
+        message: `${count} additional ${ruleId} occurrence(s) were not listed because the limit of ${this.maxPerRule} findings per rule was reached.`,
+        evidence: [
+          { key: "suppressedCount", value: count },
+          { key: "perRuleLimit", value: this.maxPerRule },
+        ],
+        repairability: mostSevere.repairability,
+      });
+    }
+    return result;
+  }
 }
 
 export async function inspectEpubHealth(
   sourcePath: string,
-  options?: { readonly toolVersion?: string | undefined } | undefined,
+  options?: EpubHealthInspectionOptions | undefined,
 ): Promise<HealthReport> {
   const startTime = Date.now();
-  const findings: QualityFinding[] = [];
+  const findings = new BoundedFindingList(MAX_FINDINGS_PER_RULE);
   const rulesExecuted = new Set<string>();
   const rulesSkipped: string[] = [];
+  const limits = resolveEpubArchiveLimits(options?.limits);
+
+  const finish = (
+    mediaOverlays?: PublicationMediaOverlaysReport | undefined,
+  ): HealthReport =>
+    finalizeReport(
+      sourcePath,
+      findings.toArray(),
+      startTime,
+      rulesExecuted,
+      rulesSkipped,
+      options?.toolVersion,
+      mediaOverlays,
+    );
 
   let fileStat;
   try {
@@ -64,17 +230,10 @@ export async function inspectEpubHealth(
       ruleId: "EPUB-CONTAINER-001",
       severity: "fatal",
       category: "container",
-      message: `Cannot access publication file: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Cannot access publication file: ${describeError(err)}`,
       repairability: "none",
     });
-    return finalizeReport(
-      sourcePath,
-      findings,
-      startTime,
-      rulesExecuted,
-      rulesSkipped,
-      options?.toolVersion,
-    );
+    return finish();
   }
 
   if (!fileStat.isFile() || fileStat.size === 0) {
@@ -85,76 +244,124 @@ export async function inspectEpubHealth(
       message: "Publication file is empty or not a regular file.",
       repairability: "none",
     });
-    return finalizeReport(
-      sourcePath,
-      findings,
-      startTime,
-      rulesExecuted,
-      rulesSkipped,
-      options?.toolVersion,
-    );
+    return finish();
   }
 
-  let archive: yauzl.ZipFile;
-  try {
-    archive = await yauzl.openPromise(sourcePath, {
-      autoClose: false,
-      lazyEntries: true,
-      strictFileNames: false,
-      validateEntrySizes: false,
-    });
-  } catch (err) {
+  // Archive-level safety checks shared with the strict EPUB loader.
+  rulesExecuted.add("EPUB-SEC-001");
+  rulesExecuted.add("EPUB-SEC-003");
+  rulesExecuted.add("EPUB-CONTAINER-006");
+
+  if (fileStat.size > limits.maxArchiveBytes) {
     findings.push({
-      ruleId: "EPUB-CONTAINER-001",
+      ruleId: "EPUB-SEC-003",
       severity: "fatal",
-      category: "container",
-      message: `Failed to open file as ZIP archive: ${err instanceof Error ? err.message : String(err)}`,
+      category: "security",
+      message: `Publication archive is ${fileStat.size} bytes, which exceeds the ${limits.maxArchiveBytes}-byte inspection limit; it was not opened.`,
+      evidence: [
+        { key: "archiveBytes", value: fileStat.size },
+        { key: "limitBytes", value: limits.maxArchiveBytes },
+      ],
       repairability: "none",
     });
-    return finalizeReport(
-      sourcePath,
-      findings,
-      startTime,
-      rulesExecuted,
-      rulesSkipped,
-      options?.toolVersion,
-    );
+    return finish();
   }
+
+  let opened: OpenedZipArchive;
+  try {
+    opened = await openZipArchive(
+      sourcePath,
+      limits,
+      (message, cause) => new ArchiveInspectionError(message, cause),
+    );
+  } catch (err) {
+    findings.push(classifyArchiveOpenFailure(err, limits));
+    return finish();
+  }
+
+  const { archive, entries } = opened;
+  let totalLoadedBytes = 0;
+  let totalLimitReached = false;
+
+  /**
+   * Reads one entry within the per-entry limit and the running total budget.
+   * Limit violations and undecodable entries become findings; the caller
+   * receives `undefined` and skips the checks that need the content.
+   */
+  const readBytes = async (
+    entryPath: string,
+    entry: Entry,
+    maxBytes: number,
+  ): Promise<Buffer | undefined> => {
+    if (totalLimitReached) return undefined;
+
+    if (entry.uncompressedSize > maxBytes) {
+      findings.push({
+        ruleId: "EPUB-SEC-003",
+        severity: "fatal",
+        category: "security",
+        message: `Archive entry '${entryPath}' declares ${entry.uncompressedSize} uncompressed bytes, exceeding the ${maxBytes}-byte limit for this document type; it was not inspected.`,
+        location: { path: entryPath },
+        evidence: [
+          { key: "declaredBytes", value: entry.uncompressedSize },
+          { key: "limitBytes", value: maxBytes },
+        ],
+        repairability: "none",
+      });
+      return undefined;
+    }
+
+    if (
+      totalLoadedBytes + entry.uncompressedSize >
+      limits.maxTotalLoadedBytes
+    ) {
+      totalLimitReached = true;
+      findings.push({
+        ruleId: "EPUB-SEC-003",
+        severity: "fatal",
+        category: "security",
+        message: `Inspection stopped before reading '${entryPath}': the inspected entries would exceed the total decompressed-size limit of ${limits.maxTotalLoadedBytes} bytes.`,
+        location: { path: entryPath },
+        evidence: [
+          { key: "loadedBytes", value: totalLoadedBytes },
+          { key: "limitBytes", value: limits.maxTotalLoadedBytes },
+        ],
+        repairability: "none",
+      });
+      return undefined;
+    }
+
+    // The declared size is authoritative: readEntryBuffer aborts as soon as the
+    // stream yields more bytes and rejects entries whose actual size differs.
+    totalLoadedBytes += entry.uncompressedSize;
+    try {
+      return await readEntryBuffer(
+        archive,
+        entry,
+        maxBytes,
+        (message, cause) => new ArchiveInspectionError(message, cause),
+      );
+    } catch (err) {
+      findings.push({
+        ruleId: "EPUB-CONTAINER-006",
+        severity: "fatal",
+        category: "container",
+        message: `Archive entry '${entryPath}' could not be read safely: ${describeError(err)}`,
+        location: { path: entryPath },
+        repairability: "none",
+      });
+      return undefined;
+    }
+  };
 
   try {
     const entryMap = new Map<string, ZipEntryInfo>();
     let entryIndex = 0;
-    let firstEntryName: string | undefined;
-
-    for await (const entry of archive.eachEntry()) {
-      if (entryIndex === 0) {
-        firstEntryName = entry.fileName;
-      }
-
-      // Security check: validate entry paths for traversal or absolute root
-      rulesExecuted.add("EPUB-SEC-001");
-      if (
-        entry.fileName.includes("\\") ||
-        entry.fileName.includes("\0") ||
-        entry.fileName.startsWith("/") ||
-        /^[A-Za-z]:/.test(entry.fileName) ||
-        entry.fileName
-          .split("/")
-          .some((seg: string) => seg === ".." || seg === ".")
-      ) {
-        findings.push({
-          ruleId: "EPUB-SEC-001",
-          severity: "fatal",
-          category: "security",
-          message: `Archive entry contains an unsafe path: ${entry.fileName}`,
-          location: { path: entry.fileName },
-          repairability: "manual",
-        });
-      }
-
-      entryMap.set(entry.fileName, { entry, index: entryIndex });
+    for (const [name, entry] of entries) {
+      entryMap.set(name, { entry, index: entryIndex });
       entryIndex += 1;
     }
+    const firstEntryName = entries.keys().next().value;
 
     // 1. Mimetype check
     rulesExecuted.add("EPUB-CONTAINER-001");
@@ -172,19 +379,26 @@ export async function inspectEpubHealth(
         repairability: "safe-auto",
       });
     } else {
-      const mimetypeBuffer = await readEntry(archive, mimetypeEntryInfo.entry);
-      const mimetypeText = mimetypeBuffer.toString("utf-8");
+      const mimetypeBuffer = await readBytes(
+        "mimetype",
+        mimetypeEntryInfo.entry,
+        limits.maxMetadataDocumentBytes,
+      );
+      if (mimetypeBuffer) {
+        const mimetypeText = mimetypeBuffer.toString("utf-8");
 
-      if (mimetypeText !== "application/epub+zip") {
-        findings.push({
-          ruleId: "EPUB-CONTAINER-002",
-          severity: "error",
-          category: "container",
-          message: `Invalid mimetype content: expected 'application/epub+zip', found '${mimetypeText}'.`,
-          location: { path: "mimetype" },
-          evidence: [{ key: "actualMimetype", value: mimetypeText }],
-          repairability: "safe-auto",
-        });
+        if (mimetypeText !== "application/epub+zip") {
+          const quoted = truncateText(mimetypeText);
+          findings.push({
+            ruleId: "EPUB-CONTAINER-002",
+            severity: "error",
+            category: "container",
+            message: `Invalid mimetype content: expected 'application/epub+zip', found '${quoted}'.`,
+            location: { path: "mimetype" },
+            evidence: [{ key: "actualMimetype", value: quoted }],
+            repairability: "safe-auto",
+          });
+        }
       }
 
       const isFirst =
@@ -228,44 +442,48 @@ export async function inspectEpubHealth(
         repairability: "safe-auto",
       });
     } else {
-      const containerText = (
-        await readEntry(archive, containerEntryInfo.entry)
-      ).toString("utf-8");
-      const { doc, error } = parseXml(containerText);
-      if (error || !doc) {
-        findings.push({
-          ruleId: "EPUB-CONTAINER-005",
-          severity: "error",
-          category: "container",
-          message: `Malformed META-INF/container.xml: ${error ?? "unknown XML error"}`,
-          location: { path: "META-INF/container.xml" },
-          repairability: "manual",
-        });
-      } else {
-        const rootfiles = doc.getElementsByTagName("rootfile");
-        for (let i = 0; i < rootfiles.length; i += 1) {
-          const rf = rootfiles[i];
-          const fullPath = rf?.getAttribute("full-path");
-          const mediaType = rf?.getAttribute("media-type");
-          if (mediaType === "application/oebps-package+xml" && fullPath) {
-            opfPath = fullPath;
-            break;
-          }
-        }
-        if (!opfPath && rootfiles.length > 0) {
-          opfPath = rootfiles[0]?.getAttribute("full-path") ?? undefined;
-        }
-
-        if (!opfPath) {
+      const containerBuffer = await readBytes(
+        "META-INF/container.xml",
+        containerEntryInfo.entry,
+        limits.maxMetadataDocumentBytes,
+      );
+      if (containerBuffer) {
+        const { doc, error } = parseXml(containerBuffer.toString("utf-8"));
+        if (error || !doc) {
           findings.push({
             ruleId: "EPUB-CONTAINER-005",
             severity: "error",
             category: "container",
-            message:
-              "META-INF/container.xml does not contain a valid <rootfile> with full-path.",
+            message: `Malformed META-INF/container.xml: ${error ?? "unknown XML error"}`,
             location: { path: "META-INF/container.xml" },
             repairability: "manual",
           });
+        } else {
+          const rootfiles = doc.getElementsByTagName("rootfile");
+          for (let i = 0; i < rootfiles.length; i += 1) {
+            const rf = rootfiles[i];
+            const fullPath = rf?.getAttribute("full-path");
+            const mediaType = rf?.getAttribute("media-type");
+            if (mediaType === "application/oebps-package+xml" && fullPath) {
+              opfPath = fullPath;
+              break;
+            }
+          }
+          if (!opfPath && rootfiles.length > 0) {
+            opfPath = rootfiles[0]?.getAttribute("full-path") ?? undefined;
+          }
+
+          if (!opfPath) {
+            findings.push({
+              ruleId: "EPUB-CONTAINER-005",
+              severity: "error",
+              category: "container",
+              message:
+                "META-INF/container.xml does not contain a valid <rootfile> with full-path.",
+              location: { path: "META-INF/container.xml" },
+              repairability: "manual",
+            });
+          }
         }
       }
     }
@@ -285,30 +503,32 @@ export async function inspectEpubHealth(
     rulesExecuted.add("EPUB-PACKAGE-002");
     rulesExecuted.add("EPUB-PACKAGE-003");
 
-    if (!opfPath || !entryMap.has(opfPath)) {
+    const opfEntryInfo = opfPath ? entryMap.get(opfPath) : undefined;
+    if (!opfPath || !opfEntryInfo) {
+      const quotedOpfPath = opfPath ? truncateText(opfPath) : undefined;
       findings.push({
         ruleId: "EPUB-PACKAGE-001",
         severity: "fatal",
         category: "package",
-        message: `OPF package document '${opfPath ?? "unknown"}' not found in archive.`,
-        location: { path: opfPath ?? "META-INF/container.xml" },
+        message: `OPF package document '${quotedOpfPath ?? "unknown"}' not found in archive.`,
+        location: { path: quotedOpfPath ?? "META-INF/container.xml" },
         repairability: "manual",
       });
-      return finalizeReport(
-        sourcePath,
-        findings,
-        startTime,
-        rulesExecuted,
-        rulesSkipped,
-        options?.toolVersion,
-      );
+      return finish();
     }
 
-    const opfEntryInfo = entryMap.get(opfPath)!;
-    const opfContent = (await readEntry(archive, opfEntryInfo.entry)).toString(
-      "utf-8",
+    const opfBuffer = await readBytes(
+      opfPath,
+      opfEntryInfo.entry,
+      limits.maxMetadataDocumentBytes,
     );
-    const { doc: opfDoc, error: opfXmlError } = parseXml(opfContent);
+    if (!opfBuffer) {
+      // A fatal limit or decoding finding has already been recorded.
+      return finish();
+    }
+    const { doc: opfDoc, error: opfXmlError } = parseXml(
+      opfBuffer.toString("utf-8"),
+    );
 
     if (opfXmlError || !opfDoc) {
       findings.push({
@@ -319,14 +539,7 @@ export async function inspectEpubHealth(
         location: { path: opfPath },
         repairability: "manual",
       });
-      return finalizeReport(
-        sourcePath,
-        findings,
-        startTime,
-        rulesExecuted,
-        rulesSkipped,
-        options?.toolVersion,
-      );
+      return finish();
     }
 
     const packageElem = opfDoc.getElementsByTagName("package")[0];
@@ -582,6 +795,7 @@ export async function inspectEpubHealth(
       }
     }
 
+    const navEntryInfo = navDocPath ? entryMap.get(navDocPath) : undefined;
     if (!navFound) {
       findings.push({
         ruleId: "EPUB-NAV-001",
@@ -592,23 +806,28 @@ export async function inspectEpubHealth(
         location: { path: opfPath },
         repairability: "manual",
       });
-    } else if (navDocPath && entryMap.has(navDocPath)) {
-      const navText = (
-        await readEntry(archive, entryMap.get(navDocPath)!.entry)
-      ).toString("utf-8");
-      const { doc: navDoc, error: navError } = parseXml(navText);
-      if (navError || !navDoc) {
+    } else if (navDocPath && navEntryInfo) {
+      // When the read is refused, a limit or decoding finding is recorded.
+      const navBuffer = await readBytes(
+        navDocPath,
+        navEntryInfo.entry,
+        limits.maxMetadataDocumentBytes,
+      );
+      const navResult = navBuffer
+        ? parseXml(navBuffer.toString("utf-8"))
+        : undefined;
+      if (navResult && (navResult.error || !navResult.doc)) {
         findings.push({
           ruleId: "EPUB-NAV-003",
           severity: "error",
           category: "navigation",
-          message: `Navigation document '${navDocPath}' has invalid XML syntax: ${navError ?? "parse error"}`,
+          message: `Navigation document '${navDocPath}' has invalid XML syntax: ${navResult.error ?? "parse error"}`,
           location: { path: navDocPath },
           repairability: "manual",
         });
-      } else {
+      } else if (navResult?.doc) {
         // Inspect links inside nav document
-        const links = navDoc.getElementsByTagName("a");
+        const links = navResult.doc.getElementsByTagName("a");
         for (let i = 0; i < links.length; i += 1) {
           const href = links[i]?.getAttribute("href");
           if (
@@ -639,12 +858,31 @@ export async function inspectEpubHealth(
     rulesExecuted.add("EPUB-RESOURCE-002");
     rulesExecuted.add("EPUB-SEC-002");
 
+    // Only archive entries that exist; used to classify orphans, so it never
+    // needs to hold more paths than the archive has entries.
     const referencedAssets = new Set<string>();
-    // Collect references from all XHTML/CSS documents
-    for (const [entryPath, info] of entryMap.entries()) {
-      if (entryPath.endsWith(".xhtml") || entryPath.endsWith(".html")) {
-        const text = (await readEntry(archive, info.entry)).toString("utf-8");
+    let referencesChecked = 0;
+    let referenceCheckTruncated = false;
+    // Collect references from manifest-declared XHTML/CSS documents only.
+    // Undeclared entries are reported as orphans without being decompressed.
+    for (const entryPath of manifestHrefsInArchive) {
+      let referencesInDocument = 0;
+      const isMarkup =
+        entryPath.endsWith(".xhtml") || entryPath.endsWith(".html");
+      const isCss = entryPath.endsWith(".css");
+      if (!isMarkup && !isCss) continue;
+      const info = entryMap.get(entryPath);
+      if (!info) continue;
 
+      const buffer = await readBytes(
+        entryPath,
+        info.entry,
+        limits.maxMarkupBytes,
+      );
+      if (!buffer) continue;
+      const text = buffer.toString("utf-8");
+
+      if (isMarkup) {
         // Security check: script tags or javascript: URIs
         if (text.includes("<script") || /javascript\s*:/i.test(text)) {
           findings.push({
@@ -656,51 +894,50 @@ export async function inspectEpubHealth(
             repairability: "manual",
           });
         }
+      }
 
-        const refs = extractReferencesFromXml(text);
-        for (const ref of refs) {
-          const target = resolveInternalPath(entryPath, ref);
-          if (target) {
-            referencedAssets.add(target);
-            if (!entryMap.has(target)) {
-              findings.push({
-                ruleId: "EPUB-RESOURCE-002",
-                severity: "warning",
-                category: "resource",
-                message: `Broken internal resource reference '${ref}' -> '${target}'.`,
-                location: { path: entryPath },
-                evidence: [
-                  { key: "ref", value: ref },
-                  { key: "resolved", value: target },
-                ],
-                repairability: "manual",
-              });
-            }
-          }
+      const refs = new Set(
+        isMarkup
+          ? extractReferencesFromXml(text)
+          : extractReferencesFromCss(text),
+      );
+      const resolve = createInternalPathResolver(entryPath);
+      for (const ref of refs) {
+        // Resolution costs at least the path length, so the number of
+        // references checked is bounded per document and per inspection.
+        if (
+          referencesInDocument >= MAX_REFERENCES_PER_DOCUMENT ||
+          referencesChecked >= MAX_REFERENCES_TOTAL
+        ) {
+          referenceCheckTruncated = true;
+          break;
         }
-      } else if (entryPath.endsWith(".css")) {
-        const text = (await readEntry(archive, info.entry)).toString("utf-8");
-        const refs = extractReferencesFromCss(text);
-        for (const ref of refs) {
-          const target = resolveInternalPath(entryPath, ref);
-          if (target) {
-            referencedAssets.add(target);
-            if (!entryMap.has(target)) {
-              findings.push({
-                ruleId: "EPUB-RESOURCE-002",
-                severity: "warning",
-                category: "resource",
-                message: `Broken CSS url reference '${ref}' -> '${target}'.`,
-                location: { path: entryPath },
-                evidence: [
-                  { key: "ref", value: ref },
-                  { key: "resolved", value: target },
-                ],
-                repairability: "manual",
-              });
-            }
-          }
+        referencesInDocument += 1;
+        referencesChecked += 1;
+        const target = resolve(ref);
+        if (!target) continue;
+        if (entryMap.has(target)) {
+          referencedAssets.add(target);
+          continue;
         }
+        if (findings.isFull("EPUB-RESOURCE-002")) {
+          findings.push(RESOURCE_002_OVERFLOW);
+          continue;
+        }
+        findings.push({
+          ruleId: "EPUB-RESOURCE-002",
+          severity: "warning",
+          category: "resource",
+          message: isMarkup
+            ? `Broken internal resource reference '${ref}' -> '${target}'.`
+            : `Broken CSS url reference '${ref}' -> '${target}'.`,
+          location: { path: entryPath },
+          evidence: [
+            { key: "ref", value: ref },
+            { key: "resolved", value: target },
+          ],
+          repairability: "manual",
+        });
       }
     }
 
@@ -731,36 +968,43 @@ export async function inspectEpubHealth(
     }
 
     for (const smilPath of smilPaths) {
-      referencedAssets.add(smilPath);
       const smilInfo = entryMap.get(smilPath);
       if (!smilInfo) continue;
+      referencedAssets.add(smilPath);
+
+      const smilBuf = await readBytes(
+        smilPath,
+        smilInfo.entry,
+        limits.maxMetadataDocumentBytes,
+      );
+      if (!smilBuf) continue;
 
       try {
-        const smilBuf = await readEntry(archive, smilInfo.entry);
         const smilDoc = parseSmilDocument(smilBuf.toString("utf-8"), smilPath);
         smilDocuments.push(smilDoc);
 
         for (const audioRef of smilDoc.audioReferences) {
-          referencedAssets.add(audioRef);
-          if (!entryMap.has(audioRef)) {
-            missingAudioFiles.add(audioRef);
-            findings.push({
-              ruleId: "EPUB-OVERLAY-001",
-              severity: "warning",
-              category: "resource",
-              message: `Media Overlays audio file '${audioRef}' referenced in '${smilPath}' was not found in archive.`,
-              location: { path: smilPath },
-              evidence: [{ key: "audioRef", value: audioRef }],
-              repairability: "manual",
-            });
+          if (entryMap.has(audioRef)) {
+            referencedAssets.add(audioRef);
+            continue;
           }
+          missingAudioFiles.add(audioRef);
+          findings.push({
+            ruleId: "EPUB-OVERLAY-001",
+            severity: "warning",
+            category: "resource",
+            message: `Media Overlays audio file '${audioRef}' referenced in '${smilPath}' was not found in archive.`,
+            location: { path: smilPath },
+            evidence: [{ key: "audioRef", value: audioRef }],
+            repairability: "manual",
+          });
         }
       } catch (err) {
         findings.push({
           ruleId: "EPUB-OVERLAY-002",
           severity: "error",
           category: "resource",
-          message: `Failed to parse SMIL 3.0 Media Overlay document '${smilPath}': ${err instanceof Error ? err.message : String(err)}`,
+          message: `Failed to parse SMIL 3.0 Media Overlay document '${smilPath}': ${describeError(err)}`,
           location: { path: smilPath },
           repairability: "manual",
         });
@@ -787,9 +1031,20 @@ export async function inspectEpubHealth(
       };
     }
 
-    // Check for orphan files in the archive
+    if (referenceCheckTruncated) {
+      findings.pushNotice({
+        ruleId: "EPUB-RESOURCE-002",
+        severity: "info",
+        category: "resource",
+        message: `Reference checking stopped at its limit (${MAX_REFERENCES_PER_DOCUMENT} per document, ${MAX_REFERENCES_TOTAL} in total); remaining references and orphan resources were not checked.`,
+        repairability: "none",
+      });
+    }
+
+    // Check for orphan files in the archive (skipped when references were
+    // not all checked, since unchecked references would look like orphans)
     // Excluded from orphan classification: mimetype, META-INF/*, the OPF file itself, or files with trailing '/' (directories)
-    for (const entryPath of entryMap.keys()) {
+    for (const entryPath of referenceCheckTruncated ? [] : entryMap.keys()) {
       if (entryPath.endsWith("/")) continue;
       if (entryPath === "mimetype") continue;
       if (entryPath.startsWith("META-INF/")) continue;
@@ -810,30 +1065,113 @@ export async function inspectEpubHealth(
       }
     }
 
-    return finalizeReport(
-      sourcePath,
-      findings,
-      startTime,
-      rulesExecuted,
-      rulesSkipped,
-      options?.toolVersion,
-      mediaOverlaysReport,
-    );
+    return finish(mediaOverlaysReport);
+  } catch (err) {
+    // Defense in depth: a malformed publication must yield a report, never an
+    // exception that propagates into the caller (e.g. the desktop main process).
+    findings.push({
+      ruleId: "EPUB-CONTAINER-006",
+      severity: "fatal",
+      category: "container",
+      message: `Inspection aborted because the archive could not be processed: ${describeError(err)}`,
+      repairability: "none",
+    });
+    return finish();
   } finally {
     archive.close();
   }
 }
 
-async function readEntry(
-  archive: yauzl.ZipFile,
-  entry: yauzl.Entry,
-): Promise<Buffer> {
-  const stream = await archive.openReadStreamPromise(entry);
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+/**
+ * Maps a failure from openZipArchive (archive structure, entry names, entry
+ * count) to a fatal finding instead of letting it escape as an exception.
+ */
+function classifyArchiveOpenFailure(
+  err: unknown,
+  limits: EpubLoaderLimits,
+): QualityFinding {
+  const message = err instanceof Error ? err.message : String(err);
+  const cause =
+    err instanceof Error && err.cause instanceof Error ? err.cause : undefined;
+
+  // yauzl rejects '..' segments, absolute paths and (with strictFileNames)
+  // backslashes; the shared validator rejects the remaining unsafe forms.
+  const yauzlUnsafeName =
+    /^(?:absolute path|invalid relative path|invalid characters in fileName): /.exec(
+      cause?.message ?? "",
+    );
+  if (yauzlUnsafeName || message.includes("unsafe entry path")) {
+    const entryName = yauzlUnsafeName
+      ? truncateText((cause?.message ?? "").slice(yauzlUnsafeName[0].length))
+      : undefined;
+    return {
+      ruleId: "EPUB-SEC-001",
+      severity: "fatal",
+      category: "security",
+      message: entryName
+        ? `Archive entry contains an unsafe path: ${entryName}`
+        : "Archive entry contains an unsafe path (empty, '.' or '..' segment, absolute or drive-letter path, backslash, or NUL character).",
+      location: entryName ? { path: entryName } : undefined,
+      repairability: "manual",
+    };
   }
-  return Buffer.concat(chunks);
+
+  if (message.includes("too many entries")) {
+    return {
+      ruleId: "EPUB-SEC-003",
+      severity: "fatal",
+      category: "security",
+      message: `Archive declares more than ${limits.maxEntries} entries, exceeding the inspection limit; it was not inspected.`,
+      evidence: [{ key: "limitEntries", value: limits.maxEntries }],
+      repairability: "none",
+    };
+  }
+
+  if (message.includes("exceeds the configured size limit")) {
+    return {
+      ruleId: "EPUB-SEC-003",
+      severity: "fatal",
+      category: "security",
+      message: `Publication archive exceeds the ${limits.maxArchiveBytes}-byte inspection limit or is not a regular file; it was not opened.`,
+      evidence: [{ key: "limitBytes", value: limits.maxArchiveBytes }],
+      repairability: "none",
+    };
+  }
+
+  if (message.includes("not a readable ZIP archive")) {
+    return {
+      ruleId: "EPUB-CONTAINER-001",
+      severity: "fatal",
+      category: "container",
+      message: `Failed to open file as ZIP archive: ${describeError(cause ?? err)}`,
+      repairability: "none",
+    };
+  }
+
+  const duplicate = /duplicate entry: /.exec(message);
+  const duplicateName = duplicate
+    ? truncateText(message.slice(duplicate.index + duplicate[0].length))
+    : undefined;
+  return {
+    ruleId: "EPUB-CONTAINER-006",
+    severity: "fatal",
+    category: "container",
+    message: `The ZIP archive could not be read safely: ${describeError(err)}`,
+    location: duplicateName ? { path: duplicateName } : undefined,
+    repairability: "none",
+  };
+}
+
+function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return truncateText(String(err));
+  const cause = err.cause instanceof Error ? ` (${err.cause.message})` : "";
+  return truncateText(`${err.message}${cause}`);
+}
+
+function truncateText(text: string): string {
+  return text.length > MAX_QUOTED_TEXT_CHARS
+    ? `${text.slice(0, MAX_QUOTED_TEXT_CHARS)}…`
+    : text;
 }
 
 function parseXml(text: string): {

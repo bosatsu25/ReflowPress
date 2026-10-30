@@ -19,6 +19,23 @@ const sampleEpubPath = path.resolve(rootDir, "tests/fixtures/sample.epub");
 const samplePdfPath = path.resolve(rootDir, "tests/fixtures/sample.pdf");
 const mainEntry = path.resolve(rootDir, "apps/desktop/dist/main/main.js");
 
+/**
+ * Makes the next native open dialog return `filePaths`. The main process
+ * only accepts paths the user picked in a dialog, so tests choose files the
+ * same way a user does instead of passing raw paths through the bridge.
+ */
+async function stubOpenDialog(
+  app: ElectronApplication,
+  filePaths: string[],
+): Promise<void> {
+  await app.evaluate(({ dialog }, paths) => {
+    dialog.showOpenDialog = (async () => ({
+      canceled: false,
+      filePaths: paths,
+    })) as typeof dialog.showOpenDialog;
+  }, filePaths);
+}
+
 test.describe("ReflowPress Library MVP Desktop E2E", () => {
   let app: ElectronApplication | null = null;
   let userDataDir: string = "";
@@ -67,24 +84,9 @@ test.describe("ReflowPress Library MVP Desktop E2E", () => {
     const page: Page = await app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
 
-    // Scan fixtures folder via desktop bridge
-    await page.evaluate(async (dir) => {
-      const bridge = (
-        window as unknown as {
-          reflowPressDesktop: {
-            scanLibraryPaths: (paths: string[]) => Promise<unknown>;
-            loadLibrary: () => Promise<unknown>;
-          };
-        }
-      ).reflowPressDesktop;
-      await bridge.scanLibraryPaths([dir]);
-      // Trigger reload to update UI state if needed
-      await bridge.loadLibrary();
-    }, fixturesDir);
-
-    // Reload window to reflect indexed catalog in view
-    await page.reload();
-    await page.waitForLoadState("domcontentloaded");
+    // Add the fixtures folder through the toolbar, as a user would
+    await stubOpenDialog(app, [fixturesDir]);
+    await page.locator("button:has-text('Add Folder...')").first().click();
 
     // Book cards should now be rendered (sample.epub, sample-japanese.epub, sample.pdf)
     const cards = page.locator(".book-card");
@@ -103,23 +105,10 @@ test.describe("ReflowPress Library MVP Desktop E2E", () => {
     const page: Page = await app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
 
-    // Index sample books
-    await page.evaluate(
-      async ({ epub, pdf }) => {
-        const bridge = (
-          window as unknown as {
-            reflowPressDesktop: {
-              scanLibraryPaths: (paths: string[]) => Promise<unknown>;
-            };
-          }
-        ).reflowPressDesktop;
-        await bridge.scanLibraryPaths([epub, pdf]);
-      },
-      { epub: sampleEpubPath, pdf: samplePdfPath },
-    );
-
-    await page.reload();
-    await page.waitForLoadState("domcontentloaded");
+    // Index sample books through "Add Books"
+    await stubOpenDialog(app, [sampleEpubPath, samplePdfPath]);
+    await page.locator("button:has-text('Add Books')").click();
+    await expect(page.locator(".book-card")).toHaveCount(2);
 
     // Filter by format: click PDF category in sidebar
     await page.locator("button:has-text('PDF')").click();
@@ -156,20 +145,10 @@ test.describe("ReflowPress Library MVP Desktop E2E", () => {
     const page: Page = await app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
 
-    // Index books
-    await page.evaluate(async (epub) => {
-      const bridge = (
-        window as unknown as {
-          reflowPressDesktop: {
-            scanLibraryPaths: (paths: string[]) => Promise<unknown>;
-          };
-        }
-      ).reflowPressDesktop;
-      await bridge.scanLibraryPaths([epub]);
-    }, sampleEpubPath);
-
-    await page.reload();
-    await page.waitForLoadState("domcontentloaded");
+    // Index the sample EPUB through "Add Books"
+    await stubOpenDialog(app, [sampleEpubPath]);
+    await page.locator("button:has-text('Add Books')").click();
+    await expect(page.locator(".book-card")).toHaveCount(1);
 
     // Click "+" to create collection
     await page.locator("button[title='Add Collection']").click();
@@ -197,20 +176,10 @@ test.describe("ReflowPress Library MVP Desktop E2E", () => {
     const page: Page = await app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
 
-    // Index sample EPUB
-    await page.evaluate(async (epub) => {
-      const bridge = (
-        window as unknown as {
-          reflowPressDesktop: {
-            scanLibraryPaths: (paths: string[]) => Promise<unknown>;
-          };
-        }
-      ).reflowPressDesktop;
-      await bridge.scanLibraryPaths([epub]);
-    }, sampleEpubPath);
-
-    await page.reload();
-    await page.waitForLoadState("domcontentloaded");
+    // Index the sample EPUB through "Add Books"
+    await stubOpenDialog(app, [sampleEpubPath]);
+    await page.locator("button:has-text('Add Books')").click();
+    await expect(page.locator(".book-card")).toHaveCount(1);
 
     // Click on book card to open reader
     await page.locator(".book-card").first().click();

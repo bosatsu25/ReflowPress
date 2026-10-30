@@ -15,6 +15,10 @@ describe("Electron Security Hardening", () => {
     __dirname,
     "../../apps/desktop/src/main/main.ts",
   );
+  const sessionHardeningPath = path.resolve(
+    __dirname,
+    "../../apps/desktop/src/main/security/session-hardening.ts",
+  );
 
   it("enforces strict Content-Security-Policy (CSP) in renderer index.html", async () => {
     const htmlContent = await fs.readFile(indexHtmlPath, "utf8");
@@ -38,6 +42,25 @@ describe("Electron Security Hardening", () => {
     // Must restrict worker-src and connect-src
     expect(csp).toContain("worker-src 'self' blob:");
     expect(csp).toContain("connect-src 'self' blob:");
+
+    // No plugin content, base rewriting or form posts, and no blob scripts
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("base-uri 'none'");
+    expect(csp).toContain("form-action 'none'");
+    expect(csp).toContain("script-src 'self';");
+  });
+
+  it("keeps the meta CSP identical to the app:// response header", async () => {
+    const htmlContent = await fs.readFile(indexHtmlPath, "utf8");
+    const meta = htmlContent.match(
+      /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
+    )![1];
+    const { CONTENT_SECURITY_POLICY } =
+      await import("../../apps/desktop/src/main/security/app-protocol.js");
+    // frame-ancestors is only honoured as a header, so the meta omits it.
+    expect(meta).toBe(
+      CONTENT_SECURITY_POLICY.replace("; frame-ancestors 'none'", ""),
+    );
   });
 
   it("enforces contextIsolation, sandbox, and disables nodeIntegration in main process", async () => {
@@ -48,12 +71,21 @@ describe("Electron Security Hardening", () => {
     expect(mainContent).toContain("sandbox: true");
     expect(mainContent).toContain("nodeIntegration: false");
 
-    // External window open denial
-    expect(mainContent).toContain("setWindowOpenHandler");
-    expect(mainContent).toContain('action: "deny"');
+    expect(mainContent).toContain("webviewTag: false");
+    expect(mainContent).toContain("spellcheck: false");
 
-    // Navigation allowlist
-    expect(mainContent).toContain("will-navigate");
-    expect(mainContent).toContain("event.preventDefault()");
+    // Every WebContents is hardened and the renderer is served from app://
+    expect(mainContent).toContain('app.on("web-contents-created"');
+    expect(mainContent).toContain("hardenSession(session.defaultSession");
+    expect(mainContent).toContain("loadURL(APP_ENTRY_URL)");
+    expect(mainContent).not.toContain("loadFile(");
+
+    const hardening = await fs.readFile(sessionHardeningPath, "utf8");
+    expect(hardening).toContain("setWindowOpenHandler");
+    expect(hardening).toContain('action: "deny"');
+    expect(hardening).toContain("will-navigate");
+    expect(hardening).toContain("will-attach-webview");
+    expect(hardening).toContain("setPermissionRequestHandler");
+    expect(hardening).toContain("onBeforeRequest");
   });
 });

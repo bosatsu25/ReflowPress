@@ -73,5 +73,8 @@ describe("Cross-Platform Packaging Configuration (electron-builder.yml)", () => 
     expect(yaml).toContain("runAsNode: false");
     expect(yaml).toContain("enableCookieEncryption: true");
     expect(yaml).toContain("onlyLoadAppFromAsar: true");
+    expect(yaml).toContain("grantFileProtocolExtraPrivileges: false");
+    expect(yaml).toContain("enableNodeOptionsEnvironmentVariable: false");
+    expect(yaml).toContain("enableNodeCliInspectArguments: false");
   });
 });

@@ -121,6 +121,15 @@ export function planRepairs(
         targetFile: finding.location?.path ?? "content.opf",
         beforeSnippet: `media-type="${declared}"`,
         afterSnippet: `media-type="${expected}"`,
+        ...(itemId && expected
+          ? {
+              manifestItem: {
+                id: itemId,
+                declaredMediaType: declared,
+                expectedMediaType: expected,
+              },
+            }
+          : {}),
       });
       continue;
     }

@@ -57,6 +57,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
     const loadTask = pdfjsLib.getDocument({
       data: pdfBytes,
+      // Never compile font programs with eval/new Function; this closes the
+      // class of bugs behind CVE-2024-4367 even if a future regression
+      // reintroduces one.
+      isEvalSupported: false,
     });
 
     loadTask.promise

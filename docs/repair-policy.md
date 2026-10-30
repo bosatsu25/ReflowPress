@@ -10,7 +10,7 @@ ReflowPress adheres strictly to the JSTQB and local-first software preservation 
 
 1. **Explicit, Never Silent**: ReflowPress **never silently repairs** a publication on open or import. All diagnostics must be presented first, allowing the user to inspect findings, view planned actions, and inspect before/after diffs.
 2. **Strictly Non-Destructive**: The original source publication is **never overwritten or mutated in place**. Repaired output is written to a distinct file named `<stem>_repaired_<YYYYMMDD-HHmmss>.epub` (or a user-specified output directory).
-3. **Byte Preservation Principle**: Archive entries that are not explicitly targeted by a repair action are preserved bit-for-bit. ReflowPress does not decompress, recompress, re-encode, or pretty-print untouched HTML/CSS/image files.
+3. **Byte Preservation Principle**: The uncompressed content of archive entries that are not explicitly targeted by a repair action is preserved byte-for-byte. ReflowPress never re-encodes or pretty-prints untouched HTML/CSS/image files. The ZIP container itself is rebuilt — entries are decompressed (within the EPUB loader's size limits, with CRC checks) and re-compressed with DEFLATE — so the archive's compressed bytes differ from the source. Entries that are corrupt, encrypted or use an unsupported compression method are refused rather than rewritten.
 4. **Re-Inspection Verification**: Before any repaired file is committed to disk, it is re-inspected by the diagnostic engine. If the repaired publication exhibits any new `fatal` or `error` findings that were not present in the original, the operation is immediately aborted and all temporary files are unlinked.
 
 ---

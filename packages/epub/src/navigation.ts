@@ -58,7 +58,7 @@ function parseNavOl<E extends Error>(
       const [filePath, fragment] = rawHref.split("#", 2);
       const normalizedPath = filePath
         ? path.posix.normalize(
-            path.posix.join(baseDirectory, decodeURIComponent(filePath)),
+            path.posix.join(baseDirectory, decodeHrefPath(filePath)),
           )
         : baseDirectory;
       resolvedHref =
@@ -130,7 +130,7 @@ function parseNcxNavPoints<E extends Error>(
       const [filePath, fragment] = rawSrc.split("#", 2);
       const normalizedPath = filePath
         ? path.posix.normalize(
-            path.posix.join(baseDirectory, decodeURIComponent(filePath)),
+            path.posix.join(baseDirectory, decodeHrefPath(filePath)),
           )
         : baseDirectory;
       resolvedHref =
@@ -167,4 +167,16 @@ function findDescendantElements(root: Element, localName: string): Element[] {
   };
   walk(root);
   return results;
+}
+
+/**
+ * Decodes percent-escapes in a navigation href. A malformed escape in one
+ * entry keeps that entry's raw text instead of failing the whole book.
+ */
+function decodeHrefPath(filePath: string): string {
+  try {
+    return decodeURIComponent(filePath);
+  } catch {
+    return filePath;
+  }
 }

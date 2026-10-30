@@ -6,6 +6,22 @@ import type {
   TombstoneRecord,
 } from "./models.js";
 
+/**
+ * Tombstones dated further ahead than this are ignored: a bundle from another
+ * machine could otherwise delete records permanently by claiming a deletion
+ * far in the future that no later edit can ever outrank.
+ */
+export const MAX_TOMBSTONE_CLOCK_SKEW_MS = 24 * 60 * 60 * 1000;
+
+function tombstoneKey(recordType: string, id: string): string {
+  return `${recordType}:${id}`;
+}
+
+function timeOf(iso: string): number {
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : 0;
+}
+
 export function mergeSnapshots(
   baseSnapshot: SyncSnapshot | null,
   localSnapshot: SyncSnapshot,
@@ -17,12 +33,21 @@ export function mergeSnapshots(
   let preservedLocalChanges = 0;
   let tombstonesApplied = 0;
 
-  // Build lookup maps for tombstones
+  // Tombstones are keyed by record type as well as id, so deleting a
+  // bookmark cannot take out a book that happens to share its id.
+  const latestAllowedDeletion = Date.now() + MAX_TOMBSTONE_CLOCK_SKEW_MS;
+  const usable = (t: TombstoneRecord) =>
+    timeOf(t.deletedAt) <= latestAllowedDeletion;
+
   const localTombstones = new Map<string, TombstoneRecord>();
-  for (const t of localSnapshot.tombstones) localTombstones.set(t.id, t);
+  for (const t of localSnapshot.tombstones) {
+    if (usable(t)) localTombstones.set(tombstoneKey(t.recordType, t.id), t);
+  }
 
   const remoteTombstones = new Map<string, TombstoneRecord>();
-  for (const t of remoteSnapshot.tombstones) remoteTombstones.set(t.id, t);
+  for (const t of remoteSnapshot.tombstones) {
+    if (usable(t)) remoteTombstones.set(tombstoneKey(t.recordType, t.id), t);
+  }
 
   // Helper to merge a generic sync collection
   function mergeCollection<T>(
@@ -51,12 +76,12 @@ export function mergeSnapshots(
       const local = localMap.get(id);
       const remote = remoteMap.get(id);
       const base = baseMap.get(id);
-      const localTomb = localTombstones.get(id);
-      const remoteTomb = remoteTombstones.get(id);
+      const localTomb = localTombstones.get(tombstoneKey(recordType, id));
+      const remoteTomb = remoteTombstones.get(tombstoneKey(recordType, id));
 
       // Check remote deletion
       if (remoteTomb && !localTomb) {
-        if (!local || local.updatedAt <= remoteTomb.deletedAt) {
+        if (!local || timeOf(local.updatedAt) <= timeOf(remoteTomb.deletedAt)) {
           // Clean remote deletion applied locally
           tombstonesApplied++;
           continue;
@@ -77,7 +102,10 @@ export function mergeSnapshots(
 
       // Check local deletion
       if (localTomb && !remoteTomb) {
-        if (!remote || remote.updatedAt <= localTomb.deletedAt) {
+        if (
+          !remote ||
+          timeOf(remote.updatedAt) <= timeOf(localTomb.deletedAt)
+        ) {
           // Local deletion preserved
           continue;
         } else {
@@ -212,13 +240,12 @@ export function mergeSnapshots(
     remoteSnapshot.readingPositions,
   );
 
-  // Union tombstones
-  const allTombstonesMap = new Map<string, TombstoneRecord>();
-  for (const t of localSnapshot.tombstones) allTombstonesMap.set(t.id, t);
-  for (const t of remoteSnapshot.tombstones) {
-    const existing = allTombstonesMap.get(t.id);
-    if (!existing || t.deletedAt > existing.deletedAt) {
-      allTombstonesMap.set(t.id, t);
+  // Union tombstones; future-dated ones are dropped rather than propagated.
+  const allTombstonesMap = new Map<string, TombstoneRecord>(localTombstones);
+  for (const [key, t] of remoteTombstones) {
+    const existing = allTombstonesMap.get(key);
+    if (!existing || timeOf(t.deletedAt) > timeOf(existing.deletedAt)) {
+      allTombstonesMap.set(key, t);
     }
   }
 

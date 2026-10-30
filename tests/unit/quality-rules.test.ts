@@ -12,7 +12,10 @@ import {
   getRuleDefinition,
   type QualityFinding,
 } from "../../packages/quality/src/index.js";
-import { buildCanonicalEpubZip } from "../../packages/repair/src/rewriter.js";
+import {
+  buildCanonicalEpubZip,
+  computeCrc32,
+} from "../../packages/repair/src/rewriter.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -427,6 +430,8 @@ function buildZipDirectly(
     localHeader.writeUInt16LE(20, 4);
     localHeader.writeUInt16LE(0x0800, 6);
     localHeader.writeUInt16LE(0, 8); // Store
+    // A correct CRC is required: the archive reader verifies it.
+    localHeader.writeUInt32LE(computeCrc32(contents), 14);
     localHeader.writeUInt32LE(contents.length, 18);
     localHeader.writeUInt32LE(contents.length, 22);
     localHeader.writeUInt16LE(nameBytes.length, 26);
@@ -439,6 +444,7 @@ function buildZipDirectly(
     centralHeader.writeUInt16LE(20, 6);
     centralHeader.writeUInt16LE(0x0800, 8);
     centralHeader.writeUInt16LE(0, 10);
+    centralHeader.writeUInt32LE(computeCrc32(contents), 16);
     centralHeader.writeUInt32LE(contents.length, 20);
     centralHeader.writeUInt32LE(contents.length, 24);
     centralHeader.writeUInt16LE(nameBytes.length, 28);

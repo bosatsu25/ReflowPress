@@ -26,6 +26,10 @@ jobs:
       # Electron 44 fetches its binary lazily instead of on install.
       - run: pnpm exec install-electron
       - run: pnpm exec playwright install chromium --with-deps
+      # PDF export launches Chromium with its sandbox on. Ubuntu 24.04
+      # blocks the unprivileged user namespaces that sandbox needs; allow
+      # them instead of running the renderer unsandboxed.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Run Release Check Aggregator
         run: pnpm release:check
 
@@ -83,6 +87,10 @@ jobs:
       - run: pnpm exec install-electron
       - run: pnpm build
       - run: pnpm exec playwright install chromium --with-deps
+      # PDF export launches Chromium with its sandbox on. Ubuntu 24.04
+      # blocks the unprivileged user namespaces that sandbox needs; allow
+      # them instead of running the renderer unsandboxed.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Run Desktop E2E Tests (Xvfb)
         run: xvfb-run -a pnpm test:e2e
       - name: Upload E2E Test Results
