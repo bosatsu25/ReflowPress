@@ -1,6 +1,6 @@
 {
   "name": "@reflowpress/annotations",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "UI-independent electronic publication annotations, highlights, bookmarks, locators, and export/import domain",

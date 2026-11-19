@@ -1,6 +1,6 @@
 {
   "name": "@reflowpress/quality",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Publication diagnostic rule engine, health reporting, and PDF quality gates for ReflowPress",
   "type": "module",

@@ -11,7 +11,7 @@ ReflowPress bridges document reading, library organization, publication health i
 ## Current Status & Implementation Facts
 
 > [!IMPORTANT]
-> **ReflowPress 1.0.0 — Stable Release (2026-10-28).**
+> **ReflowPress 1.0.1 — Security Release (2026-11-19).** Everyone on 1.0.0 should upgrade; see the [release notes](docs/releases/1.0.1.md).
 > All 10 milestones (0.1 through 1.0) are fully implemented: desktop reader GUI, library catalog, reading tools, Japanese typography & accessibility, export workbench, quality diagnostics & safe repair, interoperability & sync, and 1.0 release hardening with crash recovery, forward schema safety, and Windows and Linux packaging.
 
 ### Current State (`main`)

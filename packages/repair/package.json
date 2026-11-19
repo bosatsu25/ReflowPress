@@ -1,6 +1,6 @@
 {
   "name": "@reflowpress/repair",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Safe, non-destructive publication repair engine with re-inspection verification for ReflowPress",
   "type": "module",
