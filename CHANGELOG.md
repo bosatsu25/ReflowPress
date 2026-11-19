@@ -6,6 +6,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.1] - 2026-11-19
+
+Security release. See [docs/releases/1.0.1.md](docs/releases/1.0.1.md) and [ADR 0011](docs/adr/0011-desktop-trust-boundary.md).
+
+### Security
+
+- Desktop: the renderer is untrusted.
+  - The main process accepts only paths the user granted (native dialogs, launch argument, crash recovery, catalog books), and validates the IPC sender.
+  - The renderer is served from `app://reflowpress/` with a header CSP, a locked-down session and navigation guards. The `grantFileProtocolExtraPrivileges` fuse is off.
+  - LAN sharing and new WebDAV hosts require native confirmation.
+- OPDS server: `Host` validation against DNS rebinding, a random LAN access token, single-handle file serving, RFC 9110 suffix ranges and timeouts.
+- OPDS and WebDAV clients: streaming size caps, whole-request deadlines, and no credentials across origins. WebDAV does not follow redirects and refuses credentials embedded in URLs.
+- Sync: record-by-record bundle validation, owner-token folder locks with lease renewal, and tombstones keyed by record type with future-dated ones ignored.
+- Device transfer: `realpath` containment, no following of links at the target, re-checked plans, and no-overwrite commits.
+- Quality and repair: every archive read goes through the EPUB loader's limits, and the PDF scanners are linear with inflate budgets. Repair never overwrites existing files and escapes `container.xml`.
+- Export: a DOM allowlist sanitizer replaces the regex sanitizers. HTML exports carry a strict CSP, and Markdown output is fully escaped.
+- PDF rendering: Chromium runs with its sandbox required, JavaScript off and no network.
+- Annotations: strict import validation and escaped exports. Search text extraction is linear.
+- CLI: output is stripped of terminal control characters.
+- Electron updated to 44.11.4.
+
+### Fixed
+
+- `reflowpress opds serve` no longer exits immediately.
+- Sync and `reflowpress restore` keep local file paths.
+- A malformed percent-escape in a table of contents no longer makes the EPUB unreadable.
+
+### Changed
+
+- LAN OPDS URLs include a per-start token. WebDAV redirects are not followed.
+- PDF export fails instead of running without the Chromium sandbox; `REFLOWPRESS_CHROMIUM_NO_SANDBOX=1` opts out.
+- Exports drop remote resources and keep external links.
+- New quality rules: `EPUB-CONTAINER-006`, `EPUB-SEC-003`, `PDF-STRUCT-003` and `PDF-STRUCT-004`.
+- Release workflow uploads only installers and `SHA256SUMS.txt`.
+
+---
+
 ## [1.0.0] - 2026-10-28
 
 ### Milestone 1.0 — Stable Release Hardening
